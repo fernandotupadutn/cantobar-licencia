@@ -21,6 +21,14 @@
 
 create extension if not exists "pgcrypto";
 
+-- Enum de métodos de pago. Definido de forma idempotente porque en bases
+-- existentes la columna sales.payment_method ya es de este tipo.
+do $$
+begin
+  create type public.payment_method_enum as enum ('Efectivo', 'Transferencia');
+exception when duplicate_object then null;
+end $$;
+
 -- ------------------------------------------------------------
 -- Tabla de perfiles: 1 a 1 con auth.users, guarda el rol de cada
 -- usuario. auth.users NO es accesible directamente desde el
@@ -92,7 +100,7 @@ create table if not exists drinks (
 create table if not exists sales (
   id uuid primary key default gen_random_uuid(),
   total_amount numeric(10, 2) not null,
-  payment_method text not null check (payment_method in ('Efectivo', 'Transferencia')),
+  payment_method payment_method_enum not null,
   seller_id uuid references profiles(id) on delete set null,
   created_at timestamptz not null default now()
 );
@@ -178,7 +186,7 @@ begin
   end if;
 
   insert into sales (seller_id, payment_method, total_amount)
-  values (v_seller, p_payment_method, 0)
+  values (v_seller, p_payment_method::payment_method_enum, 0)
   returning id into v_sale_id;
 
   for v_item in select * from jsonb_array_elements(p_items) loop
