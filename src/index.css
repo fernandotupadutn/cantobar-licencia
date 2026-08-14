@@ -1,0 +1,55 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body {
+  background-color: #f4f4f5;
+}
+
+/* Cursor de texto siempre visible dentro de inputs/textarea/select:
+   fuerza un color de caret explícito para evitar que el indicador
+   parpadeante quede invisible por herencia de color o config del OS. */
+input,
+textarea,
+select {
+  caret-color: #e06d00;
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+  caret-color: #e06d00;
+}
+
+/* ============================================================
+   Impresión térmica: al imprimir, ocultamos toda la interfaz
+   web y mostramos únicamente el ticket (#thermal-ticket-root).
+   ============================================================ */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+
+  #thermal-ticket-root,
+  #thermal-ticket-root * {
+    visibility: visible;
+  }
+
+  #thermal-ticket-root {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 58mm;
+  }
+
+  @page {
+    /* Algunos drivers de impresoras térmicas (genéricos POS58/POS80 en
+       Windows, por ejemplo) NO respetan "auto" como altura y cortan la
+       página en un largo fijo por defecto. Forzamos una altura grande
+       y dejamos que el contenido real determine dónde corta la impresora
+       físicamente al terminar de imprimir. */
+    margin: 0 0 4mm 0;
+    size: 58mm 200mm;
+  }
+}

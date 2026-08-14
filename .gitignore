@@ -1,0 +1,31 @@
+# Dependencies
+node_modules
+
+# Build output
+dist
+dist-ssr
+
+# Environment (secrets). NUNCA commitear estos archivos.
+.env
+.env.*
+!.env.example
+
+# Supabase local/temp (refs de proyectos, tokens locales)
+.supabase
+supabase/.temp
+
+# Logs
+logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS
+.DS_Store
+
+# Editor
+.vscode/*
+!.vscode/extensions.json
+.idea

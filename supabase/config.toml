@@ -1,0 +1,8 @@
+project_id = "cantobar-pos"
+
+# La función hace su propia validación de autorización (solo admins).
+# Si verify_jwt queda en true (default), la plataforma rechaza el
+# preflight OPTIONS del navegador antes de llegar al código de la
+# función → error CORS. Por eso va en false.
+[functions.create-user]
+verify_jwt = false

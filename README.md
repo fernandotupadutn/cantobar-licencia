@@ -1,0 +1,181 @@
+# CantoBar POS
+
+Sistema de punto de venta para CantoBar, con autenticación y control de acceso por roles (**admin** / **vendedor**). Construido con React + TypeScript + Tailwind CSS + Supabase.
+
+## Nota sobre el diseño
+
+El brief pedía una réplica píxel-por-píxel de una imagen de referencia, pero **la imagen no llegó adjunta a la conversación** — solo la descripción textual. La interfaz se construyó siguiendo al pie de la letra la paleta y disposición descritas (fondo `#F4F4F5`, tarjetas blancas, acentos naranjas `#E06D00`/`#D97706`). Si me compartís la imagen, ajusto cualquier detalle visual para que coincida.
+
+## Puesta en marcha
+
+1. Instalá las dependencias (con `pnpm`, `npm` o `yarn`, el que uses):
+   ```bash
+   pnpm install
+   ```
+
+2. Creá el proyecto en [Supabase](https://supabase.com) y ejecutá `supabase_schema.sql` desde el SQL Editor. Esto crea:
+   - Las tablas del POS (`local_config`, `categories`, `drinks`, `sales`, `sale_items`).
+   - La tabla `profiles`, vinculada 1 a 1 con `auth.users`, con un `role` (`admin`/`vendedor`).
+   - Un trigger que crea automáticamente el perfil (`vendedor` por defecto) cada vez que alguien se registra.
+   - Políticas RLS reales: lectura abierta a cualquier usuario logueado, y escritura sobre catálogo/config/usuarios restringida a `admin`. Las ventas solo se pueden insertar con el propio `seller_id`.
+
+3. Copiá `.env.example` a `.env` y completá tus credenciales:
+   ```bash
+   cp .env.example .env
+   ```
+
+4. **Creá tu primer usuario admin** (el sistema no trae ninguno por defecto):
+   - Abrí la app y andá a "¿No tenés cuenta?" → por ahora no hay pantalla de auto-registro pública; usá el panel de Supabase (**Authentication → Users → Add user**) o pedile a un admin ya existente que lo cree desde "Administración → Usuarios".
+   - Para el primer usuario, como todavía no hay ningún admin, corré en el SQL Editor:
+     ```sql
+     update profiles set role = 'admin' where email = 'tu-email@ejemplo.com';
+     ```
+   - Iniciá sesión con ese usuario: vas a ver la pestaña "Administración".
+
+5. Corré el servidor de desarrollo:
+   ```bash
+   pnpm run dev
+   ```
+
+## Roles y permisos
+
+| Funcionalidad | Vendedor | Admin |
+|---|---|---|
+| Vender (catálogo + carrito + cobro) | ✅ | ✅ |
+| Ver historial de ventas y reimprimir tickets | ✅ | ✅ |
+| Agregar/editar/eliminar categorías y bebidas | ❌ | ✅ |
+| Panel de Ganancias (por período, método de pago, vendedor) | ❌ | ✅ |
+| Configuración del local | ❌ | ✅ |
+| Gestión de usuarios (alta, cambio de rol) | ❌ | ✅ |
+
+La restricción real vive en dos capas: la UI oculta lo que cada rol no puede usar, y las políticas RLS de Supabase bloquean esas mismas operaciones a nivel de base de datos aunque alguien intente saltarse la interfaz. Las ventas, además, solo se pueden registrar vía la función `create_sale()` (RPC): precios y totales se resuelven en el servidor, no en el navegador.
+
+## Alta de usuarios (Edge Function `create-user`)
+
+El alta de usuarios desde "Administración → Usuarios" no usa `supabase.auth.signUp()` del navegador: va por la **Edge Function** `create-user` (`supabase/functions/create-user/index.ts`), que corre en el servidor con la `service_role` key y usa `auth.admin.createUser()`.
+
+Ventajas:
+
+- **Funciona con el signup público desactivado** (que es lo recomendado y obligatorio si querés cerrar el registro público).
+- **No reemplaza la sesión del admin**: antes, `signUp()` logueaba temporalmente al admin como el usuario nuevo; ahora eso no pasa.
+- La función **autoriza por sí misma**: solo la puede llamar un usuario logueado con rol `admin` (valida el JWT y chequea `profiles.role`). La `service_role` key nunca viaja al navegador.
+
+### Deploy (una sola vez)
+
+```bash
+# Instalá el CLI de Supabase si no lo tenés
+pnpm dlx supabase login
+
+# Vinculá este proyecto con tu proyecto de Supabase
+pnpm dlx supabase link --project-ref TU_PROJECT_REF
+
+# Subí la función
+pnpm deploy:functions   # (equivale a: supabase functions deploy create-user)
+```
+
+El `TU_PROJECT_REF` es el identificador corto que aparece en la URL de tu proyecto (p. ej. `https://ltxtymctpijyzcntamin.supabase.co` → `ltxtymctpijyzcntamin`). La primera vez pedirá registrar el dominio/verificación de la URL de la función.
+
+## Estructura del proyecto
+
+```
+src/
+  types/index.ts           Tipos TypeScript (incluye Profile, UserRole)
+  lib/
+    supabaseClient.ts       Cliente de Supabase
+    AuthContext.tsx         Contexto de sesión + perfil (login/logout)
+    format.ts               Helpers de moneda, fecha y N° de ticket
+  components/
+    Login.tsx                Pantalla de inicio de sesión
+    Navbar.tsx                Header con nombre, badge de rol y logout
+    SearchBar.tsx             Buscador de bebidas
+    CategorySection.tsx       Sección por categoría con ABM (solo admin)
+    DrinkCard.tsx              Tarjeta de producto
+    Cart.tsx                   Panel "Pedido actual" + cobro
+    CartItemRow.tsx            Fila de ítem del carrito
+    SalesHistory.tsx           Historial con vendedor, badge de pago y reimpresión
+    AdminPanel.tsx              Contenedor de pestañas: Ganancias / Config / Usuarios
+    ReportsPanel.tsx            Reportes de ganancias por período/método/vendedor
+    UsersManagement.tsx         Alta de usuarios y cambio de rol
+    CategoryModal.tsx           Modal alta/edición de categoría
+    DrinkModal.tsx               Modal alta/edición de bebida
+    ThermalTicket.tsx            Ticket térmico 58mm para impresión
+    ModalShell.tsx                Shell genérico reutilizado por los modales
+  App.tsx                     Gate de auth + orquestador principal
+```
+
+## Funcionalidades
+
+- **Autenticación**: login por email/contraseña contra Supabase Auth; sesión persistida y reactiva a cambios (`onAuthStateChange`).
+- **RBAC**: vendedor vende e imprime/reimprime; admin además administra catálogo, ve reportes de ganancias, edita la config del local y gestiona usuarios.
+- **Catálogo**: búsqueda en tiempo real, ABM de categorías/bebidas (solo admin).
+- **Carrito y cobro**: "Contado"/"Transferencia", registra la venta vía la RPC `create_sale()` (el servidor valida precios contra el catálogo y calcula el total; el cliente solo envía `drink_id` y `quantity`) y guarda el `seller_id` del usuario logueado.
+- **Impresión térmica automática**: `window.print()` sobre un ticket de 58mm oculto en el DOM, con margen de seguridad al final para que no se corte el bloque de método de pago; reimpresión disponible desde el historial.
+- **Historial**: cronológico, con badge de método de pago, vendedor que la registró, detalle expandible y reimpresión.
+- **Reportes (admin)**: ganancia total, desglose Efectivo vs Transferencia, desglose por vendedor, filtro por período (hoy / 7 días / 30 días / todo).
+- **Configuración del local (admin)**: nombre, subtítulo, dirección, teléfono, CUIT y mensaje de pie del ticket.
+- **Gestión de usuarios (admin)**: alta de usuarios nuevos con rol inicial (vía Edge Function `create-user`, funciona con el signup público desactivado) y cambio de rol de usuarios existentes.
+
+## Sistema de licencias / suscripción
+
+Además de su propia base de datos, la app se conecta a una base **central** de administración (otro proyecto de Supabase, compartido entre todos tus clientes) para chequear si la suscripción de este cliente está activa. Si está `suspendido`, bloquea toda la app —incluso el login— con un mensaje de "Servicio suspendido".
+
+Variables nuevas en `.env` (ver `.env.example`): `VITE_ADMIN_SUPABASE_URL`, `VITE_ADMIN_SUPABASE_ANON_KEY`, `VITE_PROJECT_ID`.
+
+Archivos: `src/lib/adminSupabaseClient.ts` (cliente independiente, no toca la sesión de auth del cantobar) y `src/components/SubscriptionGuard.tsx` (envuelve toda la app en `App.tsx`, por fuera del login).
+
+### Esquema mínimo del lado de la base CENTRAL (no confundir con `supabase_schema.sql`, que es la base propia de este cantobar)
+
+```sql
+create table if not exists projects (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  status text not null default 'activo' check (status in ('activo', 'suspendido')),
+  created_at timestamptz not null default now()
+);
+
+alter table projects enable row level security;
+
+-- Lectura anónima permitida SOLO de status: es lo único que la app
+-- necesita para el guard. No expongas acá datos de facturación ni de
+-- otros clientes — creá una vista o columnas separadas si necesitás
+-- guardar más info sensible en la misma tabla.
+create policy "projects: lectura pública del status" on projects
+  for select using (true);
+```
+
+> ⚠️ **Nota de seguridad**: cualquier `VITE_*` termina embebido en el bundle JS y es visible para quien abra las devtools — esto es inherente a cualquier app que corre en el navegador, no un descuido de este código. Lo que importa es que la `anon key` de la base central solo tenga permiso de **lectura** sobre `projects` (RLS de arriba), y que esa tabla no contenga nada más sensible que el `status`. Nunca uses ahí una `service_role` key.
+>
+> El guard actual **bloquea por defecto también ante errores de red** (falla al conectar, `VITE_PROJECT_ID` mal configurado, etc.), no solo ante `suspendido`. Es la postura más segura para un sistema de licencias, pero si preferís que un corte de conexión no tumbe la app en producción, se puede ajustar `SubscriptionGuard.tsx` para dejar pasar (`fail open`) en el caso `error` en vez de bloquear.
+>
+> La licencia se re-chequea cada 60 segundos y al recuperar el foco de la ventana, así que una suspensión se aplica con la app abierta en menos de un minuto.
+
+## Seguridad
+
+Medidas implementadas (en `supabase_schema.sql`, que es **idempotente**: podés volver a ejecutarlo sobre una base ya existente):
+
+- **RLS por rol** en todas las tablas: lectura para logueados, escritura de catálogo/config/usuarios solo `admin`.
+- **Escritura de ventas solo por RPC**: `create_sale()` calcula precios, nombres y totales leyendo el catálogo en el servidor. El cliente solo envía `drink_id` + `quantity`. Se **revocaron** `INSERT/UPDATE/DELETE` de `sales` y `sale_items` para `anon`/`authenticated`: no se puede falsificar un precio ni un total desde el navegador.
+- **CHECK constraints**: precios y totales `>= 0`, cantidades `> 0`, `subtotal = unit_price * quantity`.
+- **Trigger de integridad**: `sales.total_amount` siempre se recalcula desde sus items.
+- **Trigger anti-manipulación**: el precio grabado en un item debe coincidir con el del catálogo.
+- **Trigger anti-lockout**: no se puede quitar el rol `admin` al último administrador del sistema.
+- **Sin XSS**: React escapa todo el renderizado; no se usan `dangerouslySetInnerHTML` ni `eval`.
+- **`created_at` de ventas** lo fija el servidor (`now()`), no se puede backdatear.
+
+Pasos manuales pendientes en el **dashboard de Supabase** (no se pueden automatizar desde el código):
+
+1. **Authentication → Providers → Email**: desactivar **"Allow new users to sign up"** (no hay registro público; los usuarios se crean desde Administración vía la Edge Function `create-user`). Si lo dejás activado, cualquiera puede autoregistrarse como `vendedor` por API.
+2. **Authentication → Policies → Password**: exigir contraseñas más fuertes (mínimo 8–12 caracteres) y activar la verificación de contraseñas comprometidas.
+3. En la base **central** de licencias, verificar que `projects` solo exponga el `status` (nada de datos de facturación ni de otros clientes), y que la anon key de ahí no tenga permisos de escritura.
+4. **Auth rate limits**: los límites por defecto de Supabase (login, signup) aplican automáticamente; no bajes los umbrales.
+
+> La validación de licencia es 100% client-side: es un disuasivo para usuarios no técnicos, no una protección contra alguien que edite el bundle JS. Para protección real habría que mover la validación a un backend (Edge Function o proxy) con credenciales que no viajen al navegador.
+
+
+
+## Build de producción
+
+```bash
+pnpm run build
+pnpm run preview
+```
