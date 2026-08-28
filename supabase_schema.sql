@@ -25,7 +25,16 @@ create extension if not exists "pgcrypto";
 -- existentes la columna sales.payment_method ya es de este tipo.
 do $$
 begin
-  create type public.payment_method_enum as enum ('Efectivo', 'Transferencia');
+  create type public.payment_method_enum as enum ('Efectivo', 'Transferencia', 'MercadoPago');
+exception when duplicate_object then null;
+end $$;
+
+-- Agrega 'MercadoPago' al enum si la base ya lo tenía definido con
+-- solo los dos métodos originales. Es idempotente.
+do $$
+begin
+  alter type public.payment_method_enum
+    add value if not exists 'MercadoPago';
 exception when duplicate_object then null;
 end $$;
 
@@ -102,8 +111,23 @@ create table if not exists sales (
   total_amount numeric(10, 2) not null,
   payment_method payment_method_enum not null,
   seller_id uuid references profiles(id) on delete set null,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  mp_order_id text,
+  mp_payment_id text
 );
+
+-- Referencias de Mercado Pago (idempotente para bases existentes).
+do $$
+begin
+  alter table public.sales add column if not exists mp_order_id text;
+exception when duplicate_column then null;
+end $$;
+
+do $$
+begin
+  alter table public.sales add column if not exists mp_payment_id text;
+exception when duplicate_column then null;
+end $$;
 
 create table if not exists sale_items (
   id uuid primary key default gen_random_uuid(),
@@ -157,7 +181,9 @@ $$;
 -- ------------------------------------------------------------
 create or replace function public.create_sale(
   p_payment_method text,
-  p_items jsonb
+  p_items jsonb,
+  p_mp_order_id text default null,
+  p_mp_payment_id text default null
 )
 returns jsonb
 language plpgsql
@@ -177,7 +203,7 @@ begin
     raise exception 'No autenticado';
   end if;
 
-  if p_payment_method not in ('Efectivo', 'Transferencia') then
+  if p_payment_method not in ('Efectivo', 'Transferencia', 'MercadoPago') then
     raise exception 'Método de pago inválido';
   end if;
 
@@ -185,8 +211,8 @@ begin
     raise exception 'Carrito vacío';
   end if;
 
-  insert into sales (seller_id, payment_method, total_amount)
-  values (v_seller, p_payment_method::payment_method_enum, 0)
+  insert into sales (seller_id, payment_method, total_amount, mp_order_id, mp_payment_id)
+  values (v_seller, p_payment_method::payment_method_enum, 0, p_mp_order_id, p_mp_payment_id)
   returning id into v_sale_id;
 
   for v_item in select * from jsonb_array_elements(p_items) loop
@@ -222,6 +248,8 @@ begin
     'payment_method', s.payment_method,
     'seller_id', s.seller_id,
     'created_at', s.created_at,
+    'mp_order_id', s.mp_order_id,
+    'mp_payment_id', s.mp_payment_id,
     'items', (
       select coalesce(jsonb_agg(jsonb_build_object(
         'id', si.id,
@@ -242,8 +270,8 @@ end;
 $$;
 
 -- Nadie puede llamar create_sale sin estar logueado.
-revoke execute on function public.create_sale(text, jsonb) from public;
-grant execute on function public.create_sale(text, jsonb) to authenticated;
+revoke execute on function public.create_sale(text, jsonb, text, text) from public;
+grant execute on function public.create_sale(text, jsonb, text, text) to authenticated;
 
 -- ------------------------------------------------------------
 -- Trigger: recalcula sales.total_amount desde sale_items cada vez

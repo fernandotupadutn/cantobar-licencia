@@ -19,6 +19,7 @@ function renderCart(overrides: Partial<Parameters<typeof Cart>[0]> = {}) {
     onRemove: noop,
     onClear: noop,
     onCheckout: noop,
+    onMercadoPago: noop,
     ...overrides,
   };
   return render(<Cart {...props} />);

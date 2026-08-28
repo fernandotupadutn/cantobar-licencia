@@ -26,6 +26,8 @@ import ThermalTicket from './components/ThermalTicket';
 import Login from './components/Login';
 import AdminPanel from './components/AdminPanel';
 import SubscriptionGuard from './components/SubscriptionGuard';
+import MercadoPagoQR from './components/MercadoPagoQR';
+import { createMpOrder } from './lib/mercadopago';
 
 function AppContent({ profile }: { profile: Profile }) {
   const { signOut } = useAuth();
@@ -58,6 +60,8 @@ function AppContent({ profile }: { profile: Profile }) {
   }>({ open: false, drink: null });
 
   const [ticketToPrint, setTicketToPrint] = useState<SaleWithItems | null>(null);
+  const [mpSession, setMpSession] = useState<{ orderId: string; expirationSeconds: number } | null>(null);
+  const [isConfirmingMp, setIsConfirmingMp] = useState(false);
 
   // ---------------------------------------------------------------
   // Carga inicial de datos
@@ -209,7 +213,7 @@ function AppContent({ profile }: { profile: Profile }) {
   // ---------------------------------------------------------------
   // Checkout: crea la venta + items en Supabase (con seller_id) e imprime el ticket
   // ---------------------------------------------------------------
-  async function handleCheckout(method: PaymentMethod) {
+  async function handleCheckout(method: PaymentMethod, mpRefs?: { orderId?: string; paymentId?: string }) {
     if (cart.length === 0) return;
     setIsCharging(true);
 
@@ -221,6 +225,8 @@ function AppContent({ profile }: { profile: Profile }) {
       const { data, error } = await supabase.rpc('create_sale', {
         p_payment_method: method,
         p_items: cart.map((item) => ({ drink_id: item.drink_id, quantity: item.quantity })),
+        p_mp_order_id: mpRefs?.orderId ?? null,
+        p_mp_payment_id: mpRefs?.paymentId ?? null,
       });
 
       if (error || !data) throw error ?? new Error('No se pudo crear la venta');
@@ -239,6 +245,57 @@ function AppContent({ profile }: { profile: Profile }) {
     } finally {
       setIsCharging(false);
     }
+  }
+
+  // ---------------------------------------------------------------
+  // Mercado Pago: inicia un cobro QR. Crea la order en MP (que la
+  // carga el Point Smart), muestra el modal con polling y, cuando
+  // el pago se acredita, registra la venta.
+  // ---------------------------------------------------------------
+  async function handleMercadoPago() {
+    if (cart.length === 0) return;
+    setIsCharging(true);
+    try {
+      // Referencia externa única para poder conciliar la venta.
+      const extRef = `${crypto.randomUUID()}`;
+      const order = await createMpOrder(cart, extRef);
+      setMpSession({
+        orderId: order.order_id,
+        expirationSeconds: parseDurationSeconds(order.expiration_time),
+      });
+    } catch (err) {
+      console.error('Error iniciando Mercado Pago:', err);
+      alert(err instanceof Error ? err.message : 'No se pudo iniciar el cobro con Mercado Pago.');
+    } finally {
+      setIsCharging(false);
+    }
+  }
+
+  // Convierte "PT5M"/"PT30S" a segundos. Default 300 (5 min).
+  function parseDurationSeconds(iso: string): number {
+    const m = /^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/.exec(iso ?? '');
+    if (!m) return 300;
+    const h = Number(m[1] ?? 0);
+    const min = Number(m[2] ?? 0);
+    const s = Number(m[3] ?? 0);
+    return h * 3600 + min * 60 + s;
+  }
+
+  // Se llama desde MercadoPagoQR cuando el pago se acredita.
+  async function handleMpPaid(paymentId: string) {
+    if (!mpSession) return;
+    setIsConfirmingMp(true);
+    try {
+      await handleCheckout('MercadoPago', { orderId: mpSession.orderId, paymentId });
+    } finally {
+      setIsConfirmingMp(false);
+      setMpSession(null);
+    }
+  }
+
+  function handleMpCancel() {
+    if (isConfirmingMp) return;
+    setMpSession(null);
   }
 
   function handleReprint(sale: SaleWithItems) {
@@ -401,6 +458,7 @@ function AppContent({ profile }: { profile: Profile }) {
                 onRemove={removeItem}
                 onClear={clearCart}
                 onCheckout={handleCheckout}
+                onMercadoPago={handleMercadoPago}
               />
             </div>
           </div>
@@ -438,6 +496,21 @@ function AppContent({ profile }: { profile: Profile }) {
       )}
 
       {ticketToPrint && <ThermalTicket sale={ticketToPrint} localConfig={localConfig} />}
+
+      {mpSession && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5">
+            <MercadoPagoQR
+              cart={cart}
+              orderId={mpSession.orderId}
+              expirationSeconds={mpSession.expirationSeconds}
+              onPaid={handleMpPaid}
+              onCancel={handleMpCancel}
+              onExpire={handleMpCancel}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

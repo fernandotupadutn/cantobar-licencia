@@ -11,6 +11,7 @@ interface CartProps {
   onRemove: (drinkId: string) => void;
   onClear: () => void;
   onCheckout: (method: PaymentMethod) => void;
+  onMercadoPago: () => void;
 }
 
 export default function Cart({
@@ -21,6 +22,7 @@ export default function Cart({
   onRemove,
   onClear,
   onCheckout,
+  onMercadoPago,
 }: CartProps) {
   const totalItems = items.reduce((acc, item) => acc + item.quantity, 0);
   const total = items.reduce((acc, item) => acc + item.unit_price * item.quantity, 0);
@@ -90,6 +92,15 @@ export default function Cart({
             Transferencia
           </button>
         </div>
+
+        <button
+          onClick={onMercadoPago}
+          disabled
+          title="Próximamente"
+          className="mt-2 w-full border-2 border-zinc-200 text-zinc-400 font-bold py-3 rounded-xl transition-colors cursor-not-allowed"
+        >
+          Mercado Pago (QR) — No disponible
+        </button>
 
         <p className="text-xs text-zinc-400 text-center mt-3">
           Cobrá con el método elegido para generar el ticket

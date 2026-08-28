@@ -6,3 +6,12 @@ project_id = "cantobar-pos"
 # función → error CORS. Por eso va en false.
 [functions.create-user]
 verify_jwt = false
+
+# Funciones de Mercado Pago: mismas consideraciones CORS.
+# El Access Token de MP no sale del servidor; se valida entre
+# backend y la API de MercadoPago.
+[functions.create-mp-order]
+verify_jwt = false
+
+[functions.check-mp-order]
+verify_jwt = false

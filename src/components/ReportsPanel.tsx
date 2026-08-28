@@ -50,7 +50,10 @@ export default function ReportsPanel() {
     const transferencia = filteredSales
       .filter((s) => s.payment_method === 'Transferencia')
       .reduce((acc, s) => acc + s.total_amount, 0);
-    return { total, efectivo, transferencia, count: filteredSales.length };
+    const mercadoPago = filteredSales
+      .filter((s) => s.payment_method === 'MercadoPago')
+      .reduce((acc, s) => acc + s.total_amount, 0);
+    return { total, efectivo, transferencia, mercadoPago, count: filteredSales.length };
   }, [filteredSales]);
 
   const bySeller = useMemo(() => {
@@ -94,7 +97,7 @@ export default function ReportsPanel() {
         ))}
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         <div className="bg-white rounded-2xl border border-zinc-200 p-4">
           <p className="text-xs font-semibold text-zinc-500 mb-1">Ganancia total</p>
           <p className="text-2xl font-extrabold text-zinc-900">{formatCurrency(totals.total)}</p>
@@ -107,6 +110,10 @@ export default function ReportsPanel() {
         <div className="bg-white rounded-2xl border border-zinc-200 p-4">
           <p className="text-xs font-semibold text-sky-600 mb-1">Transferencia</p>
           <p className="text-2xl font-extrabold text-zinc-900">{formatCurrency(totals.transferencia)}</p>
+        </div>
+        <div className="bg-white rounded-2xl border border-zinc-200 p-4">
+          <p className="text-xs font-semibold text-indigo-600 mb-1">Mercado Pago</p>
+          <p className="text-2xl font-extrabold text-zinc-900">{formatCurrency(totals.mercadoPago)}</p>
         </div>
       </div>
 
