@@ -4,6 +4,9 @@ node_modules
 # Build output
 dist
 dist-ssr
+out
+release
+*.tsbuildinfo
 
 # Environment (secrets). NUNCA commitear estos archivos.
 .env

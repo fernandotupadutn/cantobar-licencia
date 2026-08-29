@@ -2,16 +2,27 @@
   "name": "cantobar-pos",
   "private": true,
   "version": "1.0.0",
+  "description": "Sistema de punto de venta para CantoBar",
+  "author": "CantoBar",
   "type": "module",
+  "main": "./out/main/index.js",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
     "test": "vitest run",
     "preview": "vite preview",
+    "dev:electron": "electron-vite dev",
+    "build:electron": "electron-vite build",
+    "start:electron": "electron-vite preview",
+    "dist:win": "electron-vite build && electron-builder --win",
+    "dist:win:publish": "electron-vite build && electron-builder --win --publish always",
+    "dist:mac": "electron-vite build && electron-builder --mac",
+    "dist:linux": "electron-vite build && electron-builder --linux",
     "deploy:functions": "pnpm dlx supabase functions deploy create-user --project-ref ltxtymctpijyzcntamin --no-verify-jwt && pnpm dlx supabase functions deploy create-mp-order --project-ref ltxtymctpijyzcntamin --no-verify-jwt && pnpm dlx supabase functions deploy check-mp-order --project-ref ltxtymctpijyzcntamin --no-verify-jwt"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",
+    "electron-updater": "^6.8.9",
     "lucide-react": "^0.441.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
@@ -21,15 +32,65 @@
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.4",
+    "@types/node": "^26.4.0",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",
     "autoprefixer": "^10.4.20",
+    "electron": "^44.0.0",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^5.0.0",
     "jsdom": "^30.0.1",
     "postcss": "^8.4.41",
     "tailwindcss": "^3.4.10",
     "typescript": "^5.5.4",
     "vite": "^5.4.2",
     "vitest": "^3.2.7"
+  },
+  "build": {
+    "appId": "com.cantobar.pos",
+    "productName": "CantoBar POS",
+    "directories": {
+      "output": "release"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "fernandotupadutn",
+        "repo": "cantobar-licencia"
+      }
+    ],
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "CantoBar POS"
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.business"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Office"
+    }
   }
 }

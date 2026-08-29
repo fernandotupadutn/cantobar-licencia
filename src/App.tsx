@@ -27,6 +27,7 @@ import Login from './components/Login';
 import AdminPanel from './components/AdminPanel';
 import SubscriptionGuard from './components/SubscriptionGuard';
 import MercadoPagoQR from './components/MercadoPagoQR';
+import UpdateBanner from './components/UpdateBanner';
 import { createMpOrder } from './lib/mercadopago';
 
 function AppContent({ profile }: { profile: Profile }) {
@@ -496,6 +497,8 @@ function AppContent({ profile }: { profile: Profile }) {
       )}
 
       {ticketToPrint && <ThermalTicket sale={ticketToPrint} localConfig={localConfig} />}
+
+      <UpdateBanner />
 
       {mpSession && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
