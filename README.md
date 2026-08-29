@@ -179,3 +179,46 @@ Pasos manuales pendientes en el **dashboard de Supabase** (no se pueden automati
 pnpm run build
 pnpm run preview
 ```
+
+## Versión de escritorio (Electron) y auto-update
+
+La app también se puede empaquetar como aplicación de escritorio (Electron) y distribuirse con **actualizaciones automáticas** vía GitHub Releases.
+
+### Scripts de Electron
+
+| Script | Para qué |
+|---|---|
+| `pnpm dev:electron` | Correr la app de escritorio en modo desarrollo |
+| `pnpm build:electron` | Compilar main + preload + renderer |
+| `pnpm start:electron` | Previsualizar el build empaquetado |
+| `pnpm dist:win` | Generar instalador `.exe` (NSIS) |
+| `pnpm dist:win:publish` | Generar y **publicar** el release a GitHub (con auto-update) |
+
+### Cómo funciona el auto-update
+
+`electron/main.ts` usa `electron-updater`: al arrancar la app (en producción) chequea si hay una versión nueva en GitHub Releases. Si hay, la UI (`UpdateBanner`) muestra un banner con **el porcentaje de descarga en tiempo real**, y al terminar pregunta si querés "Reiniciar y actualizar".
+
+El porcentaje llega del evento `download-progress` del updater a través de un puente segurizado por IPC (preload con `contextIsolation`).
+
+### Publicar una versión nueva (release)
+
+1. **Cargá las credenciales como secrets** en GitHub → Settings → Secrets and variables → Actions (una sola vez):
+   - `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`
+   - `VITE_ADMIN_SUPABASE_URL`, `VITE_ADMIN_SUPABASE_ANON_KEY`
+   - `VITE_PROJECT_ID`
+
+2. **Subí un tag con la versión nueva** (la versión debe incrementarse respecto del release anterior para que el updater la detecte). El `package.json` no necesita tocarse si manejás la versión solo con el tag, pero mantenelo alineado:
+   ```bash
+   git tag v1.0.1
+   git push origin v1.0.1
+   ```
+
+3. El workflow `.github/workflows/release.yml` se dispara solo, compila en un runner de **Windows**, genera el instalador NSIS y **publica el release** en GitHub con el `.exe` y el `latest.yml` (que es lo que usa el auto-update para saber dónde descargar).
+
+4. El usuario descarga el instalador desde la sección **Releases** del repo. Cuando saques una versión nueva, las apps instaladas detectan la actualización automáticamente y muestran el porcentaje de descarga.
+
+> El instalador no está firmado digitalmente, así que Windows mostrará la advertencia de "editor desconocido". Es normal salvo que se compre un certificado de firma de código.
+
+### Distribución de credenciales
+
+Las claves embebidas en el bundle son las `anon` públicas (por diseño). El `VITE_PROJECT_ID` identifica la instancia para el control de licencias. Si tenés varios clientes con distintos `project_id`, generá un instalador por cliente con su `.env`/secret correspondiente.
