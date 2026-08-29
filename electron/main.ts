@@ -24,7 +24,7 @@ function createWindow(): void {
     title: 'CantoBar · Punto de venta',
     backgroundColor: '#F4F4F5',
     webPreferences: {
-      preload: join(__dirname, '../preload/preload.mjs'),
+      preload: join(__dirname, '../preload/preload.cjs'),
       sandbox: false,
       contextIsolation: true,
       nodeIntegration: false,
