@@ -1,0 +1,55 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Enable Corepack (pnpm)
+        run: corepack enable
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Create .env from GitHub secrets
+        shell: pwsh
+        run: |
+          @"
+          VITE_SUPABASE_URL=$env:VITE_SUPABASE_URL
+          VITE_SUPABASE_ANON_KEY=$env:VITE_SUPABASE_ANON_KEY
+          VITE_ADMIN_SUPABASE_URL=$env:VITE_ADMIN_SUPABASE_URL
+          VITE_ADMIN_SUPABASE_ANON_KEY=$env:VITE_ADMIN_SUPABASE_ANON_KEY
+          VITE_PROJECT_ID=$env:VITE_PROJECT_ID
+          "@ | Out-File -FilePath .env -Encoding utf8
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_ADMIN_SUPABASE_URL: ${{ secrets.VITE_ADMIN_SUPABASE_URL }}
+          VITE_ADMIN_SUPABASE_ANON_KEY: ${{ secrets.VITE_ADMIN_SUPABASE_ANON_KEY }}
+          VITE_PROJECT_ID: ${{ secrets.VITE_PROJECT_ID }}
+
+      - name: Build & publish to GitHub Releases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: pnpm dist:win:publish
+
