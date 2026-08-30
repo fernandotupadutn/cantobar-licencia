@@ -18,6 +18,7 @@ interface Window {
     qz: {
       getSecurity: () => Promise<{ certificate: string | null; algorithm: string; dir: string | null }>;
       sign: (toSign: string) => Promise<string>;
+      log: (message: string) => Promise<null>;
     };
   };
 }

@@ -22,5 +22,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   qz: {
     getSecurity: () => ipcRenderer.invoke('qz:get-security'),
     sign: (toSign: string) => ipcRenderer.invoke('qz:sign', toSign),
+    log: (message: string) => ipcRenderer.invoke('qz:log', message),
   },
 });

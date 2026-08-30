@@ -204,6 +204,11 @@ ipcMain.handle('qz:sign', async (_event, toSign: string) => {
   }
 });
 
+// El renderer también puede escribir en el mismo log (pasos de impresión).
+ipcMain.handle('qz:log', async (_event, message: string) => {
+  await logQz(`[renderer] ${message}`);
+});
+
 app.whenReady().then(() => {
   createWindow();
 

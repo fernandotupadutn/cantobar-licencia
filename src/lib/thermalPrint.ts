@@ -173,6 +173,28 @@ async function connectQz(): Promise<void> {
   return qzConnect;
 }
 
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${label} (demoró más de ${Math.round(ms / 1000)}s)`)), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      }
+    );
+  });
+}
+
+// Cada paso de impresión se registra en %APPDATA%\CantoBar POS\logs\qz-print.log
+// (fire-and-forget: el log nunca debe romper el flujo).
+function logQz(message: string): void {
+  window.electronAPI?.qz?.log(message)?.catch(() => undefined);
+}
+
 // Configura la firma de mensajes de QZ Tray usando el par de claves que
 // QZ considera confiable (demo cert de "Site Manager" o nuestro
 // override.crt). Sin esta firma, QZ muestra el diálogo "¿Permitir?" en
@@ -210,17 +232,55 @@ export async function printEscPosWithQz(sale: SaleWithItems, localConfig: LocalC
         'en la carpeta auth de la app. Abrí QZ Tray > Advanced > Site Manager > "+" una vez en esta PC.'
     );
   }
-  await connectQz().catch((err) => {
+  logQz('Configurando firma OK, conectando a QZ Tray...');
+  try {
+    await withTimeout(connectQz(), 12_000, 'La conexión con QZ Tray');
+  } catch (err) {
     console.error('QZ connect error:', err);
-    throw new Error('No se pudo conectar con QZ Tray. ¿Está instalado y abierto? (icono en la bandeja del sistema).');
-  });
+    logQz(`Error de conexión: ${err instanceof Error ? err.message : String(err)}`);
+    throw new Error(
+      `No se pudo conectar con QZ Tray (${err instanceof Error ? err.message : String(err)}). ` +
+        'Revisá que esté instalado y abierto (icono en la bandeja del sistema).'
+    );
+  }
+  logQz('Conectado. Consultando la impresora por defecto...');
 
-  const printer = await qz.printers.getDefault();
-  if (!printer) throw new Error('No se encontró una impresora por defecto');
+  let printer: string;
+  try {
+    printer = await withTimeout(qz.printers.getDefault(), 10_000, 'Consultar la impresora por defecto');
+  } catch (err) {
+    console.error('QZ getDefault error:', err);
+    logQz(`Error al consultar impresoras: ${err instanceof Error ? err.message : String(err)}`);
+    throw new Error(`No se pudo consultar la impresora por defecto (${err instanceof Error ? err.message : String(err)}).`);
+  }
+  logQz(`Impresora por defecto: "${printer}"`);
+  if (!printer) {
+    logQz('No hay impresora por defecto definida en Windows');
+    throw new Error(
+      'QZ Tray no encontró una impresora predeterminada. Configurá la térmica como ' +
+        '"Establecer como predeterminada" en Windows (Configuración > Dispositivos > Impresoras).'
+    );
+  }
+
+  // Log de las impresoras disponibles para diagnóstico (cuál hay default de verdad).
+  try {
+    const printers = await withTimeout(qz.printers.find(), 10_000, 'Listar impresoras');
+    logQz(`Impresoras disponibles: ${JSON.stringify(printers)}`);
+  } catch {
+    // No bloquea la impresión.
+  }
 
   const config = qz.configs.create(printer, { encoding: QZ_ENCODING, forceRaw: true });
   const ticket = buildEscPosTicket(sale, localConfig);
-  await qz.print(config, [ticket]);
+  logQz(`Enviando ticket ESC/POS a "${printer}" (${ticket.length} chars)...`);
+  try {
+    await withTimeout(qz.print(config, [ticket]), 20_000, 'La impresión');
+    logQz('Ticket impreso OK');
+  } catch (err) {
+    console.error('QZ print error:', err);
+    logQz(`Error al imprimir: ${err instanceof Error ? err.message : String(err)}`);
+    throw new Error(`QZ falló al imprimir en "${printer}" (${err instanceof Error ? err.message : String(err)}).`);
+  }
 }
 
 // ---------------------------------------------------------------
