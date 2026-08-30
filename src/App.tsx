@@ -28,6 +28,7 @@ import AdminPanel from './components/AdminPanel';
 import SubscriptionGuard from './components/SubscriptionGuard';
 import MercadoPagoQR from './components/MercadoPagoQR';
 import UpdateBanner from './components/UpdateBanner';
+import VersionFooter from './components/VersionFooter';
 import { createMpOrder } from './lib/mercadopago';
 
 function AppContent({ profile }: { profile: Profile }) {
@@ -567,6 +568,7 @@ export default function App() {
       <AuthProvider>
         <Gate />
       </AuthProvider>
+      <VersionFooter />
     </SubscriptionGuard>
   );
 }
