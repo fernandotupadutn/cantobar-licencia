@@ -23,9 +23,11 @@ import { formatCurrency, formatDateTime, shortTicketNumber } from './format';
 const WIDTH = 32; // columnas de Font A en ticket de 58mm
 
 // Codificación que QZ usa para convertir el texto a bytes.
-const QZ_ENCODING = 'Cp1252';
+const QZ_ENCODING = 'Cp850';
 // Número de code page ESC/POS (ESC t n) para esa codificación.
-const ESCPOS_CODEPAGE = 16; // 16 = WPC1252, 2 = Cp850
+// 2 = Cp850, 16 = WPC1252. La mayoría de las POS58 genéricas
+// soportan Cp850 y acentos en español; WPC1252 suele dar mojibake.
+const ESCPOS_CODEPAGE = 2;
 
 const ESC = '\x1B';
 const GS = '\x1D';
@@ -80,9 +82,12 @@ function wrapText(text: string, width = WIDTH): string[] {
 }
 
 // Convierte los caracteres no imprimibles en espacios para que no
-// rompan comandos ESC/POS del medio del texto.
+// rompan comandos ESC/POS del medio del texto. El formato es-AR de
+// Intl produce espacios no separables (\u00A0) en "$ 5.000": si se
+// mandan tal cual, la térmica los imprime como "á" (0xA0 en Cp850),
+// así que se reemplazan por un espacio común.
 function safeText(text: string): string {
-  return text.replace(/[\u0000-\u001F\u007F]/g, ' ');
+  return text.replace(/[\u0000-\u001F\u007F\u00A0\u2007\u202F]/g, ' ');
 }
 
 export function buildEscPosTicket(sale: SaleWithItems, localConfig: LocalConfig | null): string {
