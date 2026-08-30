@@ -109,7 +109,7 @@ src/
 - **RBAC**: vendedor vende e imprime/reimprime; admin además administra catálogo, ve reportes de ganancias, edita la config del local y gestiona usuarios.
 - **Catálogo**: búsqueda en tiempo real, ABM de categorías/bebidas (solo admin).
 - **Carrito y cobro**: "Contado"/"Transferencia", registra la venta vía la RPC `create_sale()` (el servidor valida precios contra el catálogo y calcula el total; el cliente solo envía `drink_id` y `quantity`) y guarda el `seller_id` del usuario logueado.
-- **Impresión térmica automática**: en la app de escritorio imprime **siempre por QZ Tray** en ESC/POS raw (ticket de 58mm con control exacto: centrado, doble alto, code page WPC1252 y corte). No usa `window.print()` — sale mal en la térmica — y si QZ falla, avisa al cajero para que reintente (reimpresión desde historial). La versión web usa `window.print()` porque es la única vía disponible. Reimpresión disponible desde el historial.
+- **Impresión térmica automática**: imprime **siempre por QZ Tray** en ESC/POS raw (ticket de 58mm con control exacto: centrado, doble alto, code page WPC1252 y corte), tanto en la app de escritorio como en la versión web. No usa `window.print()` — sale mal en la térmica — y si QZ falla, avisa al cajero para que reintente (reimpresión desde historial). Reimpresión disponible desde el historial.
 - **Historial**: cronológico, con badge de método de pago, vendedor que la registró, detalle expandible y reimpresión.
 - **Reportes (admin)**: ganancia total, desglose Efectivo vs Transferencia, desglose por vendedor, filtro por período (hoy / 7 días / 30 días / todo).
 - **Configuración del local (admin)**: nombre, subtítulo, dirección, teléfono, CUIT y mensaje de pie del ticket.
@@ -219,27 +219,28 @@ El porcentaje llega del evento `download-progress` del updater a través de un p
 
 > El instalador no está firmado digitalmente, así que Windows mostrará la advertencia de "editor desconocido". Es normal salvo que se compre un certificado de firma de código.
 
-### Impresión térmica con QZ Tray (Windows)
+### Impresión térmica con QZ Tray (web y escritorio)
 
-La app de escritorio imprime el ticket en **ESC/POS raw** a través de [QZ Tray](https://qz.io) — sin diálogo de impresión, directo a la impresora **por defecto** de Windows, con el formato exacto (centrado, doble alto para el encabezado, code page WPC1252 y corte de papel). Es la **única** vía de impresión en la app de escritorio: no se usa `window.print()` (imprime mal en la térmica). Si QZ no está disponible, la app muestra un error y no imprime.
+La app imprime el ticket en **ESC/POS raw** a través de [QZ Tray](https://qz.io) — sin diálogo de impresión, directo a la impresora **por defecto** de Windows, con el formato exacto (centrado, doble alto para el encabezado, code page WPC1252 y corte de papel). Es la **única** vía de impresión, tanto en la app de escritorio como en la versión web (no se usa `window.print()`, imprime mal en la térmica). Si QZ no está disponible, la app muestra un error y no imprime.
 
 **Setup por equipo donde vaya a imprimir (una sola vez):**
 
 1. Instalá [QZ Tray](https://qz.io/download/) en la PC (descargá el instalador `.exe` para Windows y seguí el asistente).
 2. Fijate que la impresora térmica quede como **impresora predeterminada** de Windows (Configuración → Dispositivos → Impresoras y escáneres → Establecer como predeterminada). La app usa siempre la predeterminada.
 3. Asegurate de tener la impresora configurada como **raw/generic** (los drivers "Generic / Text Only" o el driver ESC/POS del fabricante funcionan; la app usa `forceRaw`).
-4. **Firma silenciosa (OPCIONAL, recomendado para que NO pregunte)**: sin esto QZ imprime igual pero muestra su diálogo de permiso en cada impresión. Abrí QZ Tray → **Advanced → Site Manager** → **"+"** → *Create New* → **Yes** a las tres preguntas. Se crea la carpeta **"QZ Tray Demo Cert"** en el Escritorio.
-5. Copiá de esa carpeta `digital-certificate.txt` y `private-key.pem` a la carpeta `auth/` de la app:
+4. **En la web**, la primera conexión es por `ws://localhost:8182`. El navegador puede pedir permiso ("¿Permitís que este sitio use los dispositivos/servicios de la PC?" → **Permitir**, o el aviso de "contenido no seguro/localhost" → **Permitir**). También, la primera impresión QZ pide permiso → **Permitir**.
+5. **Firma silenciosa (OPCIONAL, recomendado en la app de escritorio para que NO pregunte)**: sin esto QZ imprime igual pero muestra su diálogo de permiso. Abrí QZ Tray → **Advanced → Site Manager** → **"+"** → *Create New* → **Yes** a las tres preguntas. Se crea la carpeta **"QZ Tray Demo Cert"** en el Escritorio.
+6. Copiá de esa carpeta `digital-certificate.txt` y `private-key.pem` a la carpeta `auth/` de la app:
    - **App instalada:** `%APPDATA%\CantoBar POS\auth\` (creala si no existe).
    - **En desarrollo:** `auth/` en la raíz del proyecto.
 
    La app firma los requests con esas claves (usando `node:crypto` en el proceso principal de Electron, la clave privada no viaja en el bundle web). Si los archivos no están, la app **igualmente imprime** por QZ, con la diferencia de que QZ preguntará permiso.
 
-**Si no imprime en la app de escritorio:** la app NO cae a `window.print()` (sale mal en la térmica): muestra un aviso con el motivo. Para diagnosticar: apretá **F12** (abre DevTools, también con la app instalada) o mirá el log en `%APPDATA%\CantoBar POS\logs\qz-print.log`.
+**Si no imprime:** la app muestra el error (QZ no instalado/abierto, o la carpeta `auth/` sin las claves). No imprime por `window.print()`. Para ver el motivo exacto: en la app de escritorio apretá **F12** (DevTools) o mirá el log en `%APPDATA%\CantoBar POS\logs\qz-print.log`; en la web, mirá la consola del navegador (F12).
 
 > ⚠️ **Varias PC (producción):** el demo cert de Site Manager solo es confiable **en la PC donde se generó**. Para imprimir igual de bien en todas las máquinas conviene generar UN par de claves propio (o comprar el certificado de QZ), copiar `override.crt` al `C:\Program Files\QZ Tray\` de cada equipo y usar ese mismo par en la carpeta `auth/` de todas. Así la firma vale en todos lados y no hay que configurar equipo por equipo.
 
-**Si no aparece nada al cobrar:** la app muestra el error (QZ no instalado/abierto, o la carpeta `auth/` sin las claves). No imprime por `window.print()`. Para ver el motivo exacto: **F12** (DevTools, también en la app instalada) o el log en `%APPDATA%\CantoBar POS\logs\qz-print.log`.
+**Si no aparece nada al cobrar:** la app muestra el error (QZ no instalado/abierto, o la carpeta `auth/` sin las claves). No imprime por `window.print()`. Para ver el motivo exacto mirá la consola del navegador (F12) o, en la app de escritorio, el log en `%APPDATA%\CantoBar POS\logs\qz-print.log`.
 
 El código vive en `src/lib/thermalPrint.ts` y el script de QZ viene en `public/vendor/qz-tray.js` (v2.2.6). Si tu impresora muestra caracteres raros en los acentos, cambiá en ese archivo `QZ_ENCODING = 'Cp1252'` → `'Cp850'` y `ESCPOS_CODEPAGE = 16` → `2` (y viceversa).
 

@@ -4,10 +4,13 @@ import { formatCurrency, formatDateTime, shortTicketNumber } from './format';
 // ---------------------------------------------------------------
 // Impresión térmica vía QZ Tray (ESC/POS raw).
 //
-// QZ Tray se carga como script global (public/vendor/qz-tray.js)
-// y expone `window.qz`. Si no está instalado o no responde (ej: en
-// la versión web), se hace fallback a window.print() con el ticket
-// HTML/CSS existente.
+// QZ Tray se carga como script global (public/vendor/qz-tray.js) y
+// expone `window.qz`. Se usa TANTO en la app de escritorio como en la
+// versión web: la impresión del ticket es siempre por QZ Tray.
+//
+// Desde una página servida por https hay que conectar por websocket
+// SIN cifrar (ws://localhost:8182, usingSecure=false): si usáramos
+// wss, el navegador rechaza el certificado auto-firmado de QZ Tray.
 //
 // Para que los acentos salgan bien en POS58 compatibles con
 // ESC/POS se usa la codificación WPC1252 (Java: "Cp1252") con el
@@ -164,7 +167,10 @@ async function connectQz(): Promise<void> {
   if (!qz) throw new Error('QZ Tray no está cargado');
   if (!qzConnect) {
     qzConnect = qz.websocket
-      .connect({ retries: 3, delay: 1 })
+      // usingSecure=false: conecta por ws://localhost:8182. Imprescindible
+      // en la web (una página https con wss vería el cert auto-firmado de
+      // QZ y el navegador lo rechaza). En Electron también funciona igual.
+      .connect({ usingSecure: false, retries: 3, delay: 1 })
       .catch((err: unknown) => {
         qzConnect = null;
         throw err;
@@ -190,9 +196,14 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
 }
 
 // Cada paso de impresión se registra en %APPDATA%\CantoBar POS\logs\qz-print.log
-// (fire-and-forget: el log nunca debe romper el flujo).
+// (solo en Electron). En web, se muestra en la consola del navegador.
+// Fire-and-forget: el log nunca debe romper el flujo.
 function logQz(message: string): void {
-  window.electronAPI?.qz?.log(message)?.catch(() => undefined);
+  if (window.electronAPI?.qz?.log) {
+    window.electronAPI.qz.log(message)?.catch(() => undefined);
+  } else {
+    console.info('[QZ Tray]', message);
+  }
 }
 
 // Configura la firma de mensajes de QZ Tray usando el par de claves que
@@ -284,34 +295,15 @@ export async function printEscPosWithQz(sale: SaleWithItems, localConfig: LocalC
 }
 
 // ---------------------------------------------------------------
-// Fallback: impresión clásica con window.print()
-// ---------------------------------------------------------------
-function legacyPrint(): Promise<void> {
-  return new Promise((resolve) => {
-    const after = () => {
-      window.removeEventListener('afterprint', after);
-      resolve();
-    };
-    window.addEventListener('afterprint', after);
-    setTimeout(() => window.print(), 150);
-  });
-}
-
-// ---------------------------------------------------------------
 // Public API.
 //
-// En la app de escritorio (Electron) la impresión es SIEMPRE por QZ
-// Tray (ESC/POS raw). NO se cae a window.print(): sale mal en la
-// impresora térmica. Si QZ falla, se lanza un error para que el cajero
-// lo vea (y pueda reintentar desde el historial).
-//
-// window.print() se usa únicamente en la versión web, donde no hay QZ
-// Tray instalado.
+// La impresión del ticket es SIEMPRE por QZ Tray (ESC/POS raw), tanto
+// en la app de escritorio como en la versión web. NO se usa
+// window.print(): sale mal en la impresora térmica. Si QZ falla (no
+// está instalado/abierto o no hay impresora por defecto), se lanza un
+// error para que el cajero lo vea y pueda reintentar desde el
+// historial.
 // ---------------------------------------------------------------
 export async function printThermalTicket(sale: SaleWithItems, localConfig: LocalConfig | null): Promise<void> {
-  if (window.electronAPI?.isElectron === true) {
-    await printEscPosWithQz(sale, localConfig);
-  } else {
-    await legacyPrint();
-  }
+  await printEscPosWithQz(sale, localConfig);
 }
