@@ -235,9 +235,11 @@ La app de escritorio imprime el ticket en **ESC/POS raw** a través de [QZ Tray]
 
    La app firma los requests con esas claves (usando `node:crypto` en el proceso principal de Electron, la clave privada no viaja en el bundle web).
 
+**Si no imprime en la app de escritorio:** la app NO cae a `window.print()` (sale mal en la térmica): muestra un aviso con el motivo. Para diagnosticar: apretá **F12** (abre DevTools, también con la app instalada) o mirá el log en `%APPDATA%\CantoBar POS\logs\qz-print.log`.
+
 > ⚠️ **Varias PC (producción):** el demo cert de Site Manager solo es confiable **en la PC donde se generó**. Para imprimir igual de bien en todas las máquinas conviene generar UN par de claves propio (o comprar el certificado de QZ), copiar `override.crt` al `C:\Program Files\QZ Tray\` de cada equipo y usar ese mismo par en la carpeta `auth/` de todas. Así la firma vale en todos lados y no hay que configurar equipo por equipo.
 
-**Si no aparece nada al cobrar:** la app muestra el error (QZ no instalado/abierto, o la carpeta `auth/` sin las claves). No imprime por `window.print()`. Revisá que QZ Tray esté corriendo (icono en la bandeja del sistema) y que la carpeta `auth/` tenga los dos archivos.
+**Si no aparece nada al cobrar:** la app muestra el error (QZ no instalado/abierto, o la carpeta `auth/` sin las claves). No imprime por `window.print()`. Para ver el motivo exacto: **F12** (DevTools, también en la app instalada) o el log en `%APPDATA%\CantoBar POS\logs\qz-print.log`.
 
 El código vive en `src/lib/thermalPrint.ts` y el script de QZ viene en `public/vendor/qz-tray.js` (v2.2.6). Si tu impresora muestra caracteres raros en los acentos, cambiá en ese archivo `QZ_ENCODING = 'Cp1252'` → `'Cp850'` y `ESCPOS_CODEPAGE = 16` → `2` (y viceversa).
 

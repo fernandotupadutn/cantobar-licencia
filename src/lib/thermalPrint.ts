@@ -181,11 +181,12 @@ async function ensureQzSecurity(qz: Qz): Promise<boolean> {
   const api = window.electronAPI?.qz;
   if (!api) return false;
   try {
-    const { certificate, algorithm } = await api.getSecurity();
+    const { certificate, algorithm, dir } = await api.getSecurity();
     if (!certificate) {
+      const hint = dir ? dir : '%APPDATA%\\CantoBar POS\\auth\\';
       console.error(
         '[QZ Tray] No se encontró la firma. Para imprimir sin diálogos, poné digital-certificate.txt y ' +
-          'private-key.pem en auth/ (producción: %APPDATA%\\CantoBar POS\\auth\\).'
+          `private-key.pem en: ${hint}`
       );
       return false;
     }
@@ -205,8 +206,8 @@ export async function printEscPosWithQz(sale: SaleWithItems, localConfig: LocalC
   const signed = await ensureQzSecurity(qz);
   if (!signed) {
     throw new Error(
-      'QZ Tray sin certificado de firma. Configurá digital-certificate.txt y private-key.pem ' +
-        'en la carpeta "auth" de la app (producción: %APPDATA%\\CantoBar POS\\auth\\).'
+      'QZ Tray sin certificado de firma: no se encontraron digital-certificate.txt y private-key.pem ' +
+        'en la carpeta auth de la app. Abrí QZ Tray > Advanced > Site Manager > "+" una vez en esta PC.'
     );
   }
   await connectQz().catch((err) => {

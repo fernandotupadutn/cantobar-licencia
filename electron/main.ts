@@ -1,6 +1,6 @@
 import { app, shell, BrowserWindow, ipcMain } from 'electron';
 import { join } from 'node:path';
-import { readFile } from 'node:fs/promises';
+import { readFile, appendFile, mkdir } from 'node:fs/promises';
 import { createSign, constants } from 'node:crypto';
 import { autoUpdater } from 'electron-updater';
 
@@ -41,6 +41,21 @@ function createWindow(): void {
 
   win.on('closed', () => {
     mainWindow = null;
+  });
+
+  // DevTools con F12 / Ctrl+Shift+I (también en producción) para poder
+  // inspeccionar errores de impresión sin reinstalar.
+  win.webContents.on('before-input-event', (_event, input) => {
+    if (input.type !== 'keyDown') return;
+    const isF12 = input.key === 'F12';
+    const isInspect = input.control && input.shift && input.key.toLowerCase() === 'i';
+    if (isF12 || isInspect) {
+      if (win.webContents.isDevToolsOpened()) {
+        win.webContents.closeDevTools();
+      } else {
+        win.webContents.openDevTools({ mode: 'detach' });
+      }
+    }
   });
 
   // Los enlaces externos se abren en el navegador del sistema, nunca dentro de la app.
@@ -124,42 +139,69 @@ ipcMain.handle('update:install', () => {
 // distribuyamos con la app). La firma se hace acá (proceso principal,
 // node:crypto) para no exponer la clave privada en el bundle web.
 //
-// Ubicación de los archivos:
-//   - producción: %APPDATA%\CantoBar POS\auth\digital-certificate.txt
-//                 y  ...\auth\private-key.pem
-//   - desarrollo: ./auth/  (raíz del proyecto)
+// Ubicación de los archivos (se buscan en este orden):
+//   - <userData>/auth/digital-certificate.txt  y private-key.pem
+//   - <userData>/digital-certificate.txt       y private-key.pem (raíz)
+// En desarrollo, userData se reemplaza por la raíz del proyecto.
 // ---------------------------------------------------------------
-function getQzAuthDir(): string {
-  return app.isPackaged ? join(app.getPath('userData'), 'auth') : join(process.cwd(), 'auth');
-}
-
-async function readQzSecurity(): Promise<{ certificate: string; key: string } | null> {
-  const dir = getQzAuthDir();
+async function logQz(message: string): Promise<void> {
   try {
-    const [certificate, key] = await Promise.all([
-      readFile(join(dir, 'digital-certificate.txt'), 'utf8'),
-      readFile(join(dir, 'private-key.pem'), 'utf8'),
-    ]);
-    return { certificate: certificate.trim(), key };
+    const dir = join(app.getPath('userData'), 'logs');
+    await mkdir(dir, { recursive: true });
+    await appendFile(join(dir, 'qz-print.log'), `[${new Date().toISOString()}] ${message}\n`, 'utf8');
   } catch {
-    return null;
+    // El log nunca debe romper el flujo de impresión.
   }
 }
 
+function getQzAuthBaseDir(): string {
+  return app.isPackaged ? app.getPath('userData') : join(process.cwd());
+}
+
+async function resolveQzSecurity(): Promise<{ certificate: string; key: string; dir: string } | null> {
+  const base = getQzAuthBaseDir();
+  const candidates = [join(base, 'auth'), base];
+  for (const dir of candidates) {
+    try {
+      const [certificate, key] = await Promise.all([
+        readFile(join(dir, 'digital-certificate.txt'), 'utf8'),
+        readFile(join(dir, 'private-key.pem'), 'utf8'),
+      ]);
+      await logQz(`Claves de firma encontradas en: ${dir}`);
+      return { certificate: certificate.trim(), key, dir };
+    } catch {
+      // Probar el siguiente candidato.
+    }
+  }
+  await logQz(
+    `No se encontraron las claves de firma. Revisadas: ${candidates.join(' y ')} ` +
+      '(necesitas digital-certificate.txt y private-key.pem)'
+  );
+  return null;
+}
+
 ipcMain.handle('qz:get-security', async () => {
-  const sec = await readQzSecurity();
+  const sec = await resolveQzSecurity();
   return {
     certificate: sec?.certificate ?? null,
     algorithm: 'SHA512',
+    dir: sec?.dir ?? null,
   };
 });
 
 ipcMain.handle('qz:sign', async (_event, toSign: string) => {
-  const sec = await readQzSecurity();
+  const sec = await resolveQzSecurity();
   if (!sec) throw new Error('No se encontraron las claves de firma de QZ Tray');
-  const signer = createSign('sha512');
-  signer.update(toSign, 'utf8');
-  return signer.sign({ key: sec.key, padding: constants.RSA_PKCS1_PADDING }).toString('base64');
+  try {
+    const signer = createSign('sha512');
+    signer.update(toSign, 'utf8');
+    const signature = signer.sign({ key: sec.key, padding: constants.RSA_PKCS1_PADDING }).toString('base64');
+    await logQz('Firma de mensaje OK');
+    return signature;
+  } catch (err) {
+    await logQz(`Error firmando el mensaje: ${err instanceof Error ? err.message : String(err)}`);
+    throw err;
+  }
 });
 
 app.whenReady().then(() => {

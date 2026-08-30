@@ -27,5 +27,19 @@ Cómo obtenerlos (una vez por PC de prueba):
 > - repetir el paso de Site Manager en cada equipo (cada equipo tendría su
 >   propio par → hay que actualizar estos archivos por equipo).
 
-En **producción** (app instalada), estos archivos se leen de
-`%APPDATA%\CantoBar POS\auth\`.
+En **producción** (app instalada), los archivos se leen de (en este orden):
+`%APPDATA%\CantoBar POS\auth\` o bien `%APPDATA%\CantoBar POS\` (raíz).
+
+### Si no imprime
+
+La app **no** usa `window.print()` en la app de escritorio: si QZ Tray falla,
+muestra un aviso con el motivo. Para ver más detalles:
+
+1. Abrí **DevTools con F12** (también funciona con la app instalada) y mirá la consola.
+2. El log de impresión queda en `%APPDATA%\CantoBar POS\logs\qz-print.log`.
+
+Motivos típicos:
+
+- **Faltan las claves** en la carpeta auth → copiá los dos archivos (el log y el aviso lo indican).
+- **QZ Tray no está abierto** → abrilo (queda en la bandeja del sistema).
+- El demo cert solo es confiable **en la PC donde se generó**.

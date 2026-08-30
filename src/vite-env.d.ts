@@ -16,7 +16,7 @@ interface Window {
       onStatus: (cb: (payload: UpdateStatusPayload) => void) => () => void;
     };
     qz: {
-      getSecurity: () => Promise<{ certificate: string | null; algorithm: string }>;
+      getSecurity: () => Promise<{ certificate: string | null; algorithm: string; dir: string | null }>;
       sign: (toSign: string) => Promise<string>;
     };
   };
