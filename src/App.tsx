@@ -242,10 +242,25 @@ function AppContent({ profile }: { profile: Profile }) {
       clearCart();
     } catch (err) {
       console.error('Error al registrar la venta:', err);
-      alert('Hubo un error al registrar la venta. Revisá la consola para más detalles.');
+      const message = getErrorMessage(err);
+      alert(`Hubo un error al registrar la venta: ${message}`);
     } finally {
       setIsCharging(false);
     }
+  }
+
+  // Extrae un mensaje legible del error de una RPC de Supabase.
+  function getErrorMessage(err: unknown): string {
+    const e = err as { message?: string; details?: string; hint?: string; code?: string } | null;
+    if (e?.message) {
+      // El raise exception de Postgres llega como:
+      // 'Error in RPC: create_sale: <mensaje>' — dejamos la parte útil.
+      const cleaned = e.message.replace(/^.*?: create_sale:\s*/i, '');
+      if (e.details) return `${cleaned}. Detalle: ${e.details}`;
+      return cleaned;
+    }
+    if (e?.code === 'PGRST116') return 'La venta se creó pero no se devolvió el resultado.';
+    return 'Error desconocido. Revisá la consola.';
   }
 
   // ---------------------------------------------------------------
