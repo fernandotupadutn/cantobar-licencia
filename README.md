@@ -228,13 +228,32 @@ La app imprime el ticket en **ESC/POS raw** a través de [QZ Tray](https://qz.io
 1. Instalá [QZ Tray](https://qz.io/download/) en la PC (descargá el instalador `.exe` para Windows y seguí el asistente).
 2. Fijate que la impresora térmica quede como **impresora predeterminada** de Windows (Configuración → Dispositivos → Impresoras y escáneres → Establecer como predeterminada). La app usa siempre la predeterminada.
 3. Asegurate de tener la impresora configurada como **raw/generic** (los drivers "Generic / Text Only" o el driver ESC/POS del fabricante funcionan; la app usa `forceRaw`).
-4. **En la web**, la primera conexión es por `ws://localhost:8182`. El navegador puede pedir permiso ("¿Permitís que este sitio use los dispositivos/servicios de la PC?" → **Permitir**, o el aviso de "contenido no seguro/localhost" → **Permitir**). También, la primera impresión QZ pide permiso → **Permitir**.
+4. **En la web**, la primera conexión es por `ws://localhost:8182`. El navegador puede pedir permiso ("¿Permitís que este sitio use los dispositivos/servicios de la PC?" → **Permitir**, o el aviso de "contenido no seguro/localhost" → **Permitir**). También, la primera impresión QZ pide permiso → **Permitir**. Para que no pregunte, ver *Firma silenciosa en la web* más abajo.
 5. **Firma silenciosa (OPCIONAL, recomendado en la app de escritorio para que NO pregunte)**: sin esto QZ imprime igual pero muestra su diálogo de permiso. Abrí QZ Tray → **Advanced → Site Manager** → **"+"** → *Create New* → **Yes** a las tres preguntas. Se crea la carpeta **"QZ Tray Demo Cert"** en el Escritorio.
 6. Copiá de esa carpeta `digital-certificate.txt` y `private-key.pem` a la carpeta `auth/` de la app:
    - **App instalada:** `%APPDATA%\CantoBar POS\auth\` (creala si no existe).
    - **En desarrollo:** `auth/` en la raíz del proyecto.
 
    La app firma los requests con esas claves (usando `node:crypto` en el proceso principal de Electron, la clave privada no viaja en el bundle web). Si los archivos no están, la app **igualmente imprime** por QZ, con la diferencia de que QZ preguntará permiso.
+
+**Firma silenciosa para la versión WEB (para que no pregunte en cada impresión):**
+
+1. Generá UNA vez un par de claves propio (abrí una terminal en cualquier PC):
+   ```
+   openssl req -x509 -newkey rsa:2048 -sha256 -keyout qz-sign.key -out qz-sign.crt -days 3650 -nodes -subj "/CN=CantoBar POS"
+   ```
+   - `qz-sign.crt` es el certificado **público**.
+   - `qz-sign.key` es la clave **privada**: no se la des a nadie ni la pongas en la web.
+2. En **cada PC** que imprima desde la web, copiá `qz-sign.crt` a la carpeta de instalación de QZ Tray con el nombre `override.crt` (normalmente `C:\Program Files\QZ Tray\override.crt`). QZ Tray lee ese archivo como raíz de confianza (además del store de Windows). Reiniciá QZ Tray.
+3. Subí las claves como **secrets** de Supabase (Dashboard → Edge Functions → Secrets):
+   - `QZ_CERT_PEM` = contenido completo de `qz-sign.crt` (con las líneas `-----BEGIN/END CERTIFICATE-----`).
+   - `QZ_PRIVATE_KEY_PEM` = contenido completo de `qz-sign.key` (con las líneas `-----BEGIN/END PRIVATE KEY-----`).
+4. Desplegá la función `qz-sign`:
+   ```
+   SUPABASE_ACCESS_TOKEN=tu_token pnpm dlx supabase functions deploy qz-sign
+   ```
+
+La web firma cada request a QZ Tray contra ese certificado (la clave privada nunca sale del servidor: la firma la hace Supabase). Si un PC no tiene `override.crt`, esa PC igual imprime pero QZ vuelve a preguntar permisos. Sin la función desplegada, la web imprime igual, preguntando permiso.
 
 **Si no imprime:** la app muestra el error (QZ no instalado/abierto, o la carpeta `auth/` sin las claves). No imprime por `window.print()`. Para ver el motivo exacto: en la app de escritorio apretá **F12** (DevTools) o mirá el log en `%APPDATA%\CantoBar POS\logs\qz-print.log`; en la web, mirá la consola del navegador (F12).
 

@@ -50,9 +50,16 @@ interface QzPrintConfig {
 interface Qz {
   security: {
     setSignatureAlgorithm: (algorithm: string) => void;
-    setCertificatePromise: (promiseFactory: (resolve: (cert: string) => void, reject: (err: unknown) => void) => void) => void;
+    // QZ 2.2 acepta resolver, AsyncFunction y Promise directa.
+    setCertificatePromise: (
+      promiseFactory: ((resolve: (cert: string) => void, reject: (err: unknown) => void) => void) | (() => Promise<string>)
+    ) => void;
     setSignaturePromise: (
-      promiseFactory: (toSign: string) => (resolve: (signature: string) => void, reject: (err: unknown) => void) => void
+      promiseFactory: (
+        toSign: string
+      ) =>
+        | Promise<string>
+        | ((resolve: (signature: string) => void, reject: (err: unknown) => void) => void)
     ) => void;
   };
   websocket: {

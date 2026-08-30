@@ -1,5 +1,6 @@
 import { LocalConfig, SaleWithItems } from '../types';
 import { formatCurrency, formatDateTime, shortTicketNumber } from './format';
+import { supabaseUrl, supabaseAnonKey } from './supabaseClient';
 
 // ---------------------------------------------------------------
 // Impresión térmica vía QZ Tray (ESC/POS raw).
@@ -160,7 +161,7 @@ export async function isQzAvailable(): Promise<boolean> {
   const qz = getQz();
   if (!qz) return false;
   try {
-    await qz.websocket.connect({ retries: 1, delay: 1 });
+    await qz.websocket.connect({ usingSecure: false, retries: 1, delay: 1 });
     return true;
   } catch {
     return false;
@@ -211,26 +212,65 @@ function logQz(message: string): void {
   }
 }
 
-// Configura la firma de mensajes de QZ Tray usando el par de claves que
-// QZ considera confiable (demo cert de "Site Manager" o nuestro
-// override.crt). Sin esta firma, QZ muestra el diálogo "¿Permitir?" en
-// CADA impresión. Devuelve false si no hay claves configuradas.
+// Configura la firma de mensajes de QZ Tray (silent printing).
+//
+// - Escritorio: firma Electron (node:crypto) con el par de claves de
+//   auth/ (o el demo cert de "Site Manager"). Sin claves, devuelve
+//   false y QZ imprime igual pero pregunta permiso.
+// - Web: firma una Edge Function de Supabase (qz-sign) con la clave
+//   privada del servidor (nunca viaja al navegador). QZ deja de
+//   preguntar cuando la PC confía en el cert (override.crt en la
+//   carpeta de QZ Tray).
+//
+// OJO con la promise de firma: QZ 2.2 acepta una AsyncFunction que
+// devuelva el contenido firmado directamente. El patrón
+// "resolver que retorna un promise" (toSign) => () => api.sign(toSign)
+// hace "new Promise(resolver)" y ese valor de retorno se IGNORA: la
+// firma queda pendiente para siempre y el print cuelga.
 async function ensureQzSecurity(qz: Qz): Promise<boolean> {
   const api = window.electronAPI?.qz;
-  if (!api) return false;
   try {
-    const { certificate, algorithm, dir } = await api.getSecurity();
-    if (!certificate) {
-      const hint = dir ? dir : '%APPDATA%\\CantoBar POS\\auth\\';
-      console.error(
-        '[QZ Tray] No se encontró la firma. Para imprimir sin diálogos, poné digital-certificate.txt y ' +
-          `private-key.pem en: ${hint}`
-      );
+    if (api) {
+      const { certificate, algorithm, dir } = await api.getSecurity();
+      if (!certificate) {
+        const hint = dir ? dir : '%APPDATA%\\CantoBar POS\\auth\\';
+        console.error(
+          `[QZ Tray] No se encontró la firma (buscá en ${hint}). Sin firmar, QZ pregunta permiso en cada impresión.`
+        );
+        return false;
+      }
+      qz.security.setSignatureAlgorithm(algorithm || 'SHA512');
+      qz.security.setCertificatePromise((resolve) => resolve(certificate));
+      qz.security.setSignaturePromise(async (toSign) => await api.sign(toSign));
+      return true;
+    }
+
+    // Web: firma vía servidor (Edge Function qz-sign).
+    const fnUrl = `${supabaseUrl}/functions/v1/qz-sign`;
+    const headers = { apikey: supabaseAnonKey };
+    // Probamos que la función responda antes de configurar QZ: si no
+    // está, se imprime sin firmar (QZ pregunta permiso) en vez de romper.
+    const probe = await fetch(fnUrl, { headers });
+    if (!probe.ok) {
+      console.error('[QZ Tray] qz-sign no responde (estado', probe.status, ')');
       return false;
     }
-    qz.security.setSignatureAlgorithm(algorithm || 'SHA512');
-    qz.security.setCertificatePromise((resolve) => resolve(certificate));
-    qz.security.setSignaturePromise((toSign) => () => api.sign(toSign));
+    const { certificate } = await probe.json();
+    if (!certificate) return false;
+
+    qz.security.setSignatureAlgorithm('SHA512');
+    // QZ 2.2 acepta AsyncFunction y des-resuelve con su retorno.
+    qz.security.setCertificatePromise(async () => certificate);
+    qz.security.setSignaturePromise(async (toSign) => {
+      const res = await fetch(fnUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...headers },
+        body: JSON.stringify({ toSign }),
+      });
+      if (!res.ok) throw new Error(`qz-sign respondió ${res.status}`);
+      const data = await res.json();
+      return data.signature;
+    });
     return true;
   } catch (err) {
     console.error('[QZ Tray] Error al configurar la firma:', err);

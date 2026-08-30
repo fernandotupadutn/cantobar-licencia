@@ -1,7 +1,7 @@
 {
   "name": "cantobar-pos",
   "private": true,
-  "version": "1.0.10",
+  "version": "1.0.11",
   "description": "Sistema de punto de venta para CantoBar",
   "author": "CantoBar",
   "type": "module",
@@ -18,7 +18,7 @@
     "dist:win:publish": "electron-vite build && electron-builder --win --publish always",
     "dist:mac": "electron-vite build && electron-builder --mac",
     "dist:linux": "electron-vite build && electron-builder --linux",
-    "deploy:functions": "pnpm dlx supabase functions deploy create-user --project-ref ltxtymctpijyzcntamin --no-verify-jwt && pnpm dlx supabase functions deploy create-mp-order --project-ref ltxtymctpijyzcntamin --no-verify-jwt && pnpm dlx supabase functions deploy check-mp-order --project-ref ltxtymctpijyzcntamin --no-verify-jwt"
+    "deploy:functions": "pnpm dlx supabase functions deploy create-user --project-ref ltxtymctpijyzcntamin --no-verify-jwt && pnpm dlx supabase functions deploy create-mp-order --project-ref ltxtymctpijyzcntamin --no-verify-jwt && pnpm dlx supabase functions deploy check-mp-order --project-ref ltxtymctpijyzcntamin --no-verify-jwt && pnpm dlx supabase functions deploy qz-sign --project-ref ltxtymctpijyzcntamin --no-verify-jwt"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",
