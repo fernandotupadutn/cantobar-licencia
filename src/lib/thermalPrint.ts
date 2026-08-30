@@ -225,13 +225,13 @@ async function ensureQzSecurity(qz: Qz): Promise<boolean> {
 export async function printEscPosWithQz(sale: SaleWithItems, localConfig: LocalConfig | null): Promise<void> {
   const qz = getQz();
   if (!qz) throw new Error('QZ Tray no está disponible en esta instalación');
+
+  // La firma (silent printing) es OPCIONAL: si están las claves en auth/
+  // se firma y QZ no pregunta; si no están, se imprime igual (QZ puede
+  // mostrar su diálogo de permiso). Nunca bloquea la impresión.
   const signed = await ensureQzSecurity(qz);
-  if (!signed) {
-    throw new Error(
-      'QZ Tray sin certificado de firma: no se encontraron digital-certificate.txt y private-key.pem ' +
-        'en la carpeta auth de la app. Abrí QZ Tray > Advanced > Site Manager > "+" una vez en esta PC.'
-    );
-  }
+  logQz(signed ? 'Firma configurada (no debería preguntar)' : 'Sin firma: QZ puede pedir permiso para imprimir');
+
   logQz('Configurando firma OK, conectando a QZ Tray...');
   try {
     await withTimeout(connectQz(), 12_000, 'La conexión con QZ Tray');

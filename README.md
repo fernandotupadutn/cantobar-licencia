@@ -228,12 +228,12 @@ La app de escritorio imprime el ticket en **ESC/POS raw** a través de [QZ Tray]
 1. Instalá [QZ Tray](https://qz.io/download/) en la PC (descargá el instalador `.exe` para Windows y seguí el asistente).
 2. Fijate que la impresora térmica quede como **impresora predeterminada** de Windows (Configuración → Dispositivos → Impresoras y escáneres → Establecer como predeterminada). La app usa siempre la predeterminada.
 3. Asegurate de tener la impresora configurada como **raw/generic** (los drivers "Generic / Text Only" o el driver ESC/POS del fabricante funcionan; la app usa `forceRaw`).
-4. **Firma silenciosa (para que NO pregunte al imprimir)**: sin esto, QZ muestra "¿Permitir?" en cada impresión. Abrí QZ Tray → **Advanced → Site Manager** → **"+"** → *Create New* → **Yes** a las tres preguntas. Se crea la carpeta **"QZ Tray Demo Cert"** en el Escritorio.
+4. **Firma silenciosa (OPCIONAL, recomendado para que NO pregunte)**: sin esto QZ imprime igual pero muestra su diálogo de permiso en cada impresión. Abrí QZ Tray → **Advanced → Site Manager** → **"+"** → *Create New* → **Yes** a las tres preguntas. Se crea la carpeta **"QZ Tray Demo Cert"** en el Escritorio.
 5. Copiá de esa carpeta `digital-certificate.txt` y `private-key.pem` a la carpeta `auth/` de la app:
    - **App instalada:** `%APPDATA%\CantoBar POS\auth\` (creala si no existe).
    - **En desarrollo:** `auth/` en la raíz del proyecto.
 
-   La app firma los requests con esas claves (usando `node:crypto` en el proceso principal de Electron, la clave privada no viaja en el bundle web).
+   La app firma los requests con esas claves (usando `node:crypto` en el proceso principal de Electron, la clave privada no viaja en el bundle web). Si los archivos no están, la app **igualmente imprime** por QZ, con la diferencia de que QZ preguntará permiso.
 
 **Si no imprime en la app de escritorio:** la app NO cae a `window.print()` (sale mal en la térmica): muestra un aviso con el motivo. Para diagnosticar: apretá **F12** (abre DevTools, también con la app instalada) o mirá el log en `%APPDATA%\CantoBar POS\logs\qz-print.log`.
 
