@@ -57,7 +57,9 @@
       {
         "provider": "github",
         "owner": "fernandotupadutn",
-        "repo": "cantobar-licencia"
+        "repo": "cantobar-licencia",
+        "draft": false,
+        "prerelease": false
       }
     ],
     "files": [

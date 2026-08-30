@@ -48,6 +48,21 @@ jobs:
           VITE_ADMIN_SUPABASE_ANON_KEY: ${{ secrets.VITE_ADMIN_SUPABASE_ANON_KEY }}
           VITE_PROJECT_ID: ${{ secrets.VITE_PROJECT_ID }}
 
+      - name: Create GitHub release (published)
+        shell: bash
+        run: |
+          # Crea el release ya publicado (draft=false) antes de publicar los
+          # assets. Si electron-builder crea el release solo, lo deja como
+          # DRAFT y electron-updater lo ignora (no avisa ninguna actualización).
+          gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1 || \
+            gh release create "${GITHUB_REF_NAME}" \
+              --draft=false \
+              --prerelease=false \
+              --title "CantoBar POS ${GITHUB_REF_NAME}" \
+              --notes "Release automático de CantoBar POS."
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Build & publish to GitHub Releases
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
