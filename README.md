@@ -109,7 +109,7 @@ src/
 - **RBAC**: vendedor vende e imprime/reimprime; admin además administra catálogo, ve reportes de ganancias, edita la config del local y gestiona usuarios.
 - **Catálogo**: búsqueda en tiempo real, ABM de categorías/bebidas (solo admin).
 - **Carrito y cobro**: "Contado"/"Transferencia", registra la venta vía la RPC `create_sale()` (el servidor valida precios contra el catálogo y calcula el total; el cliente solo envía `drink_id` y `quantity`) y guarda el `seller_id` del usuario logueado.
-- **Impresión térmica automática**: `window.print()` sobre un ticket de 58mm oculto en el DOM, con margen de seguridad al final para que no se corte el bloque de método de pago; reimpresión disponible desde el historial.
+- **Impresión térmica automática**: en la app de escritorio imprime por **QZ Tray** en ESC/POS raw (ticket de 58mm con control exacto: centrado, doble alto, code page WPC1252 y corte), con **fallback a `window.print()`** sobre el ticket HTML oculto si QZ no está disponible (por ejemplo en la versión web). Reimpresión disponible desde el historial.
 - **Historial**: cronológico, con badge de método de pago, vendedor que la registró, detalle expandible y reimpresión.
 - **Reportes (admin)**: ganancia total, desglose Efectivo vs Transferencia, desglose por vendedor, filtro por período (hoy / 7 días / 30 días / todo).
 - **Configuración del local (admin)**: nombre, subtítulo, dirección, teléfono, CUIT y mensaje de pie del ticket.
@@ -218,6 +218,21 @@ El porcentaje llega del evento `download-progress` del updater a través de un p
 4. El usuario descarga el instalador desde la sección **Releases** del repo. Cuando saques una versión nueva, las apps instaladas detectan la actualización automáticamente y muestran el porcentaje de descarga.
 
 > El instalador no está firmado digitalmente, así que Windows mostrará la advertencia de "editor desconocido". Es normal salvo que se compre un certificado de firma de código.
+
+### Impresión térmica con QZ Tray (Windows)
+
+La app de escritorio imprime el ticket en **ESC/POS raw** a través de [QZ Tray](https://qz.io) — sin diálogo de impresión, directo a la impresora **por defecto** de Windows, con el formato exacto (centrado, doble alto para el encabezado, code page WPC1252 y corte de papel).
+
+**Setup por equipo donde vaya a imprimir (una sola vez):**
+
+1. Instalá [QZ Tray](https://qz.io/download/) en la PC (descargá el instalador `.exe` para Windows y seguí el asistente).
+2. Fijate que la impresora térmica quede como **impresora predeterminada** de Windows (Configuración → Dispositivos → Impresoras y escáneres → Establecer como predeterminada). La app usa siempre la predeterminada.
+3. Asegurate de tener la impresora configurada como **raw/generic** (los drivers "Generic / Text Only" o el driver ESC/POS del fabricante funcionan; la app usa `forceRaw`).
+4. **Certificado/trust**: la primera impresión QZ va a pedir aprobar el certificado local generado al instalar (paso 1 muestra el diálogo "¿Confiás en este certificado?" → **Permitir**). Para evitar el diálogo en cada PC conviene instalar el `root-ca.crt` generado por QZ en el almacén de certificados de Windows durante/después de la instalación.
+
+**Si no aparece nada al cobrar:** la app cae automáticamente a `window.print()`, así que en ese caso revisá que QZ Tray esté corriendo (icono en la bandeja del sistema) y que el diálogo de certificado haya sido aprobado.
+
+El código vive en `src/lib/thermalPrint.ts` y el script de QZ viene en `public/vendor/qz-tray.js` (v2.2.6). Si tu impresora muestra caracteres raros en los acentos, cambiá en ese archivo `QZ_ENCODING = 'Cp1252'` → `'Cp850'` y `ESCPOS_CODEPAGE = 16` → `2` (y viceversa).
 
 ### Distribución de credenciales
 

@@ -30,6 +30,7 @@ import MercadoPagoQR from './components/MercadoPagoQR';
 import UpdateBanner from './components/UpdateBanner';
 import VersionFooter from './components/VersionFooter';
 import { createMpOrder } from './lib/mercadopago';
+import { printThermalTicket } from './lib/thermalPrint';
 
 function AppContent({ profile }: { profile: Profile }) {
   const { signOut } = useAuth();
@@ -81,17 +82,20 @@ function AppContent({ profile }: { profile: Profile }) {
   }, [activeView]);
 
   useEffect(() => {
-    if (ticketToPrint) {
-      const timeout = setTimeout(() => window.print(), 150);
-      return () => clearTimeout(timeout);
-    }
-  }, [ticketToPrint]);
-
-  useEffect(() => {
-    const handleAfterPrint = () => setTicketToPrint(null);
-    window.addEventListener('afterprint', handleAfterPrint);
-    return () => window.removeEventListener('afterprint', handleAfterPrint);
-  }, []);
+    if (!ticketToPrint) return;
+    let cancelled = false;
+    // Impresión térmica: en la app de escritorio usa QZ Tray (ESC/POS raw)
+    // y si no está disponible cae a window.print(). Retira el ticket cuando
+    // termina (o en el afterprint del navegador).
+    printThermalTicket(ticketToPrint, localConfig)
+      .catch((err) => console.error('Error al imprimir:', err))
+      .finally(() => {
+        if (!cancelled) setTicketToPrint(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [ticketToPrint, localConfig]);
 
   // Si un vendedor quedaba con el panel de admin abierto y pierde el rol, lo mandamos a Vender
   useEffect(() => {
