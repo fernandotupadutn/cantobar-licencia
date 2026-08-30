@@ -49,7 +49,38 @@ function json(body: unknown, init: ResponseInit = {}) {
   });
 }
 
-function pemToRaw(pem: string): ArrayBuffer {
+function derLengthBytes(len: number): number[] {
+  if (len < 0x80) return [len];
+  const arr: number[] = [];
+  let l = len;
+  while (l > 0) {
+    arr.unshift(l & 0xff);
+    l = Math.floor(l / 256);
+  }
+  return [0x80 | arr.length, ...arr];
+}
+
+function derElement(tag: number, content: number[]): number[] {
+  return [tag, ...derLengthBytes(content.length), ...content];
+}
+
+// Preambulo fijo del PKCS#8 para claves RSA:
+//   SEQUENCE { OID 1.2.840.113549.1.1.1, NULL }
+// => 30 0d 06 09 2a 86 48 86 f7 0d 01 01 01 05 00
+const PKCS8_RSA_ALGORITHM = [0x30, 0x0d, 0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x01, 0x05, 0x00];
+// INTEGER 0 (version)
+const PKCS8_INTEGER_ZERO = [0x02, 0x01, 0x00];
+
+// Convierte una clave RSA "BEGIN RSA PRIVATE KEY" (PKCS#1) al formato
+// PKCS#8 que acepta crypto.subtle.importKey('pkcs8'). Si la clave ya
+// viene en PKCS#8 ("BEGIN PRIVATE KEY"), se usa tal cual.
+function pkcs1ToPkcs8(pkcs1Bytes: number[]): number[] {
+  const octetString = derElement(0x04, pkcs1Bytes);
+  const inner = [...PKCS8_INTEGER_ZERO, ...PKCS8_RSA_ALGORITHM, ...octetString];
+  return derElement(0x30, inner);
+}
+
+function pemToKey(pem: string): ArrayBuffer {
   const base64 = pem
     .split('\n')
     .filter((line) => !line.startsWith('-----') && line.trim() !== '')
@@ -58,11 +89,12 @@ function pemToRaw(pem: string): ArrayBuffer {
   const bin = atob(base64);
   const bytes = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  return bytes.buffer;
+  const isPkcs1 = /-----BEGIN RSA PRIVATE KEY-----/.test(pem);
+  return new Uint8Array(isPkcs1 ? pkcs1ToPkcs8(Array.from(bytes)) : Array.from(bytes)).buffer;
 }
 
 async function sign(toSign: string, keyPem: string): Promise<string> {
-  const key = await crypto.subtle.importKey('pkcs8', pemToRaw(keyPem), SIGN_ALG, false, ['sign']);
+  const key = await crypto.subtle.importKey('pkcs8', pemToKey(keyPem), SIGN_ALG, false, ['sign']);
   const data = new TextEncoder().encode(toSign);
   const sig = await crypto.subtle.sign(SIGN_ALG, key, data);
   const bytes = new Uint8Array(sig);
