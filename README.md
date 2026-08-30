@@ -109,7 +109,7 @@ src/
 - **RBAC**: vendedor vende e imprime/reimprime; admin además administra catálogo, ve reportes de ganancias, edita la config del local y gestiona usuarios.
 - **Catálogo**: búsqueda en tiempo real, ABM de categorías/bebidas (solo admin).
 - **Carrito y cobro**: "Contado"/"Transferencia", registra la venta vía la RPC `create_sale()` (el servidor valida precios contra el catálogo y calcula el total; el cliente solo envía `drink_id` y `quantity`) y guarda el `seller_id` del usuario logueado.
-- **Impresión térmica automática**: en la app de escritorio imprime por **QZ Tray** en ESC/POS raw (ticket de 58mm con control exacto: centrado, doble alto, code page WPC1252 y corte), con **fallback a `window.print()`** sobre el ticket HTML oculto si QZ no está disponible (por ejemplo en la versión web). Reimpresión disponible desde el historial.
+- **Impresión térmica automática**: en la app de escritorio imprime **siempre por QZ Tray** en ESC/POS raw (ticket de 58mm con control exacto: centrado, doble alto, code page WPC1252 y corte). No usa `window.print()` — sale mal en la térmica — y si QZ falla, avisa al cajero para que reintente (reimpresión desde historial). La versión web usa `window.print()` porque es la única vía disponible. Reimpresión disponible desde el historial.
 - **Historial**: cronológico, con badge de método de pago, vendedor que la registró, detalle expandible y reimpresión.
 - **Reportes (admin)**: ganancia total, desglose Efectivo vs Transferencia, desglose por vendedor, filtro por período (hoy / 7 días / 30 días / todo).
 - **Configuración del local (admin)**: nombre, subtítulo, dirección, teléfono, CUIT y mensaje de pie del ticket.
@@ -221,7 +221,7 @@ El porcentaje llega del evento `download-progress` del updater a través de un p
 
 ### Impresión térmica con QZ Tray (Windows)
 
-La app de escritorio imprime el ticket en **ESC/POS raw** a través de [QZ Tray](https://qz.io) — sin diálogo de impresión, directo a la impresora **por defecto** de Windows, con el formato exacto (centrado, doble alto para el encabezado, code page WPC1252 y corte de papel).
+La app de escritorio imprime el ticket en **ESC/POS raw** a través de [QZ Tray](https://qz.io) — sin diálogo de impresión, directo a la impresora **por defecto** de Windows, con el formato exacto (centrado, doble alto para el encabezado, code page WPC1252 y corte de papel). Es la **única** vía de impresión en la app de escritorio: no se usa `window.print()` (imprime mal en la térmica). Si QZ no está disponible, la app muestra un error y no imprime.
 
 **Setup por equipo donde vaya a imprimir (una sola vez):**
 
@@ -237,7 +237,7 @@ La app de escritorio imprime el ticket en **ESC/POS raw** a través de [QZ Tray]
 
 > ⚠️ **Varias PC (producción):** el demo cert de Site Manager solo es confiable **en la PC donde se generó**. Para imprimir igual de bien en todas las máquinas conviene generar UN par de claves propio (o comprar el certificado de QZ), copiar `override.crt` al `C:\Program Files\QZ Tray\` de cada equipo y usar ese mismo par en la carpeta `auth/` de todas. Así la firma vale en todos lados y no hay que configurar equipo por equipo.
 
-**Si no aparece nada al cobrar:** la app cae automáticamente a `window.print()`, así que en ese caso revisá que QZ Tray esté corriendo (icono en la bandeja del sistema) y que la carpeta `auth/` tenga los dos archivos.
+**Si no aparece nada al cobrar:** la app muestra el error (QZ no instalado/abierto, o la carpeta `auth/` sin las claves). No imprime por `window.print()`. Revisá que QZ Tray esté corriendo (icono en la bandeja del sistema) y que la carpeta `auth/` tenga los dos archivos.
 
 El código vive en `src/lib/thermalPrint.ts` y el script de QZ viene en `public/vendor/qz-tray.js` (v2.2.6). Si tu impresora muestra caracteres raros en los acentos, cambiá en ese archivo `QZ_ENCODING = 'Cp1252'` → `'Cp850'` y `ESCPOS_CODEPAGE = 16` → `2` (y viceversa).
 

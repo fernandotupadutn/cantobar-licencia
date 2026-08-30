@@ -201,10 +201,18 @@ async function ensureQzSecurity(qz: Qz): Promise<boolean> {
 
 export async function printEscPosWithQz(sale: SaleWithItems, localConfig: LocalConfig | null): Promise<void> {
   const qz = getQz();
-  if (!qz) throw new Error('QZ Tray no está disponible');
+  if (!qz) throw new Error('QZ Tray no está disponible en esta instalación');
   const signed = await ensureQzSecurity(qz);
-  if (!signed) throw new Error('QZ Tray configurado sin certificado de firma');
-  await connectQz();
+  if (!signed) {
+    throw new Error(
+      'QZ Tray sin certificado de firma. Configurá digital-certificate.txt y private-key.pem ' +
+        'en la carpeta "auth" de la app (producción: %APPDATA%\\CantoBar POS\\auth\\).'
+    );
+  }
+  await connectQz().catch((err) => {
+    console.error('QZ connect error:', err);
+    throw new Error('No se pudo conectar con QZ Tray. ¿Está instalado y abierto? (icono en la bandeja del sistema).');
+  });
 
   const printer = await qz.printers.getDefault();
   if (!printer) throw new Error('No se encontró una impresora por defecto');
@@ -229,21 +237,20 @@ function legacyPrint(): Promise<void> {
 }
 
 // ---------------------------------------------------------------
-// Public API: intenta QZ Tray (solo en la app de escritorio) y si
-// falla, usa window.print(). Nunca deja al ticket sin imprimir.
+// Public API.
+//
+// En la app de escritorio (Electron) la impresión es SIEMPRE por QZ
+// Tray (ESC/POS raw). NO se cae a window.print(): sale mal en la
+// impresora térmica. Si QZ falla, se lanza un error para que el cajero
+// lo vea (y pueda reintentar desde el historial).
+//
+// window.print() se usa únicamente en la versión web, donde no hay QZ
+// Tray instalado.
 // ---------------------------------------------------------------
-export async function printThermalTicket(
-  sale: SaleWithItems,
-  localConfig: LocalConfig | null,
-  preferQz = window.electronAPI?.isElectron === true
-): Promise<void> {
-  if (preferQz && getQz()) {
-    try {
-      await printEscPosWithQz(sale, localConfig);
-      return;
-    } catch (err) {
-      console.error('QZ Tray falló, usando impresión clásica:', err);
-    }
+export async function printThermalTicket(sale: SaleWithItems, localConfig: LocalConfig | null): Promise<void> {
+  if (window.electronAPI?.isElectron === true) {
+    await printEscPosWithQz(sale, localConfig);
+  } else {
+    await legacyPrint();
   }
-  await legacyPrint();
 }

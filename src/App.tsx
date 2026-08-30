@@ -84,11 +84,15 @@ function AppContent({ profile }: { profile: Profile }) {
   useEffect(() => {
     if (!ticketToPrint) return;
     let cancelled = false;
-    // Impresión térmica: en la app de escritorio usa QZ Tray (ESC/POS raw)
-    // y si no está disponible cae a window.print(). Retira el ticket cuando
-    // termina (o en el afterprint del navegador).
+    // Impresión térmica: en la app de escritorio SIEMPRE por QZ Tray
+    // (ESC/POS raw). window.print() sale mal en la térmica, así que si
+    // QZ falla se avisa al cajero en vez de imprimir un ticket mal.
     printThermalTicket(ticketToPrint, localConfig)
-      .catch((err) => console.error('Error al imprimir:', err))
+      .catch((err) => {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error('Error al imprimir:', err);
+        window.alert(`No se pudo imprimir el ticket.\n\n${message}\n\nPodés reintentar desde el historial (reimpresión).`);
+      })
       .finally(() => {
         if (!cancelled) setTicketToPrint(null);
       });
