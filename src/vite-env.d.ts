@@ -15,6 +15,10 @@ interface Window {
       install: () => Promise<null>;
       onStatus: (cb: (payload: UpdateStatusPayload) => void) => () => void;
     };
+    qz: {
+      getSecurity: () => Promise<{ certificate: string | null; algorithm: string }>;
+      sign: (toSign: string) => Promise<string>;
+    };
   };
 }
 
@@ -43,6 +47,13 @@ interface QzPrintConfig {
 }
 
 interface Qz {
+  security: {
+    setSignatureAlgorithm: (algorithm: string) => void;
+    setCertificatePromise: (promiseFactory: (resolve: (cert: string) => void, reject: (err: unknown) => void) => void) => void;
+    setSignaturePromise: (
+      promiseFactory: (toSign: string) => (resolve: (signature: string) => void, reject: (err: unknown) => void) => void
+    ) => void;
+  };
   websocket: {
     connect: (config?: QzSocketConfig) => Promise<void>;
     disconnect: () => Promise<void>;

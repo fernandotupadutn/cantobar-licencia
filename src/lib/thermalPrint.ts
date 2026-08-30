@@ -173,9 +173,37 @@ async function connectQz(): Promise<void> {
   return qzConnect;
 }
 
+// Configura la firma de mensajes de QZ Tray usando el par de claves que
+// QZ considera confiable (demo cert de "Site Manager" o nuestro
+// override.crt). Sin esta firma, QZ muestra el diálogo "¿Permitir?" en
+// CADA impresión. Devuelve false si no hay claves configuradas.
+async function ensureQzSecurity(qz: Qz): Promise<boolean> {
+  const api = window.electronAPI?.qz;
+  if (!api) return false;
+  try {
+    const { certificate, algorithm } = await api.getSecurity();
+    if (!certificate) {
+      console.error(
+        '[QZ Tray] No se encontró la firma. Para imprimir sin diálogos, poné digital-certificate.txt y ' +
+          'private-key.pem en auth/ (producción: %APPDATA%\\CantoBar POS\\auth\\).'
+      );
+      return false;
+    }
+    qz.security.setSignatureAlgorithm(algorithm || 'SHA512');
+    qz.security.setCertificatePromise((resolve) => resolve(certificate));
+    qz.security.setSignaturePromise((toSign) => () => api.sign(toSign));
+    return true;
+  } catch (err) {
+    console.error('[QZ Tray] Error al configurar la firma:', err);
+    return false;
+  }
+}
+
 export async function printEscPosWithQz(sale: SaleWithItems, localConfig: LocalConfig | null): Promise<void> {
   const qz = getQz();
   if (!qz) throw new Error('QZ Tray no está disponible');
+  const signed = await ensureQzSecurity(qz);
+  if (!signed) throw new Error('QZ Tray configurado sin certificado de firma');
   await connectQz();
 
   const printer = await qz.printers.getDefault();

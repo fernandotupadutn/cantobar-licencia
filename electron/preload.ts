@@ -19,4 +19,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       return () => ipcRenderer.removeListener('update:status', listener);
     },
   },
+  qz: {
+    getSecurity: () => ipcRenderer.invoke('qz:get-security'),
+    sign: (toSign: string) => ipcRenderer.invoke('qz:sign', toSign),
+  },
 });

@@ -1,5 +1,7 @@
 import { app, shell, BrowserWindow, ipcMain } from 'electron';
 import { join } from 'node:path';
+import { readFile } from 'node:fs/promises';
+import { createSign, constants } from 'node:crypto';
 import { autoUpdater } from 'electron-updater';
 
 autoUpdater.autoDownload = false;
@@ -111,6 +113,53 @@ ipcMain.handle('update:install', () => {
     setImmediate(() => autoUpdater.quitAndInstall());
   }
   return null;
+});
+
+// ---------------------------------------------------------------
+// QZ Tray: firma de mensajes (silent printing)
+//
+// QZ Tray muestra el diálogo "¿Permitir?" en cada impresión salvo que
+// los requests vengan FIRMADOS con el par de claves que QZ tiene como
+// confiable (demo cert de "Site Manager", o el override.crt que
+// distribuyamos con la app). La firma se hace acá (proceso principal,
+// node:crypto) para no exponer la clave privada en el bundle web.
+//
+// Ubicación de los archivos:
+//   - producción: %APPDATA%\CantoBar POS\auth\digital-certificate.txt
+//                 y  ...\auth\private-key.pem
+//   - desarrollo: ./auth/  (raíz del proyecto)
+// ---------------------------------------------------------------
+function getQzAuthDir(): string {
+  return app.isPackaged ? join(app.getPath('userData'), 'auth') : join(process.cwd(), 'auth');
+}
+
+async function readQzSecurity(): Promise<{ certificate: string; key: string } | null> {
+  const dir = getQzAuthDir();
+  try {
+    const [certificate, key] = await Promise.all([
+      readFile(join(dir, 'digital-certificate.txt'), 'utf8'),
+      readFile(join(dir, 'private-key.pem'), 'utf8'),
+    ]);
+    return { certificate: certificate.trim(), key };
+  } catch {
+    return null;
+  }
+}
+
+ipcMain.handle('qz:get-security', async () => {
+  const sec = await readQzSecurity();
+  return {
+    certificate: sec?.certificate ?? null,
+    algorithm: 'SHA512',
+  };
+});
+
+ipcMain.handle('qz:sign', async (_event, toSign: string) => {
+  const sec = await readQzSecurity();
+  if (!sec) throw new Error('No se encontraron las claves de firma de QZ Tray');
+  const signer = createSign('sha512');
+  signer.update(toSign, 'utf8');
+  return signer.sign({ key: sec.key, padding: constants.RSA_PKCS1_PADDING }).toString('base64');
 });
 
 app.whenReady().then(() => {

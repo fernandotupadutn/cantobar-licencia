@@ -25,6 +25,11 @@ pnpm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
+# Claves de firma de QZ Tray. NUNCA commitear (se generan por instalación
+# vía "QZ Tray > Advanced > Site Manager", o se distribuyen como override.crt).
+auth/*
+!auth/README.md
+
 # OS
 .DS_Store
 

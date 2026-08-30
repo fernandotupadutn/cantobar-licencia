@@ -228,9 +228,16 @@ La app de escritorio imprime el ticket en **ESC/POS raw** a través de [QZ Tray]
 1. Instalá [QZ Tray](https://qz.io/download/) en la PC (descargá el instalador `.exe` para Windows y seguí el asistente).
 2. Fijate que la impresora térmica quede como **impresora predeterminada** de Windows (Configuración → Dispositivos → Impresoras y escáneres → Establecer como predeterminada). La app usa siempre la predeterminada.
 3. Asegurate de tener la impresora configurada como **raw/generic** (los drivers "Generic / Text Only" o el driver ESC/POS del fabricante funcionan; la app usa `forceRaw`).
-4. **Certificado/trust**: la primera impresión QZ va a pedir aprobar el certificado local generado al instalar (paso 1 muestra el diálogo "¿Confiás en este certificado?" → **Permitir**). Para evitar el diálogo en cada PC conviene instalar el `root-ca.crt` generado por QZ en el almacén de certificados de Windows durante/después de la instalación.
+4. **Firma silenciosa (para que NO pregunte al imprimir)**: sin esto, QZ muestra "¿Permitir?" en cada impresión. Abrí QZ Tray → **Advanced → Site Manager** → **"+"** → *Create New* → **Yes** a las tres preguntas. Se crea la carpeta **"QZ Tray Demo Cert"** en el Escritorio.
+5. Copiá de esa carpeta `digital-certificate.txt` y `private-key.pem` a la carpeta `auth/` de la app:
+   - **App instalada:** `%APPDATA%\CantoBar POS\auth\` (creala si no existe).
+   - **En desarrollo:** `auth/` en la raíz del proyecto.
 
-**Si no aparece nada al cobrar:** la app cae automáticamente a `window.print()`, así que en ese caso revisá que QZ Tray esté corriendo (icono en la bandeja del sistema) y que el diálogo de certificado haya sido aprobado.
+   La app firma los requests con esas claves (usando `node:crypto` en el proceso principal de Electron, la clave privada no viaja en el bundle web).
+
+> ⚠️ **Varias PC (producción):** el demo cert de Site Manager solo es confiable **en la PC donde se generó**. Para imprimir igual de bien en todas las máquinas conviene generar UN par de claves propio (o comprar el certificado de QZ), copiar `override.crt` al `C:\Program Files\QZ Tray\` de cada equipo y usar ese mismo par en la carpeta `auth/` de todas. Así la firma vale en todos lados y no hay que configurar equipo por equipo.
+
+**Si no aparece nada al cobrar:** la app cae automáticamente a `window.print()`, así que en ese caso revisá que QZ Tray esté corriendo (icono en la bandeja del sistema) y que la carpeta `auth/` tenga los dos archivos.
 
 El código vive en `src/lib/thermalPrint.ts` y el script de QZ viene en `public/vendor/qz-tray.js` (v2.2.6). Si tu impresora muestra caracteres raros en los acentos, cambiá en ese archivo `QZ_ENCODING = 'Cp1252'` → `'Cp850'` y `ESCPOS_CODEPAGE = 16` → `2` (y viceversa).
 
