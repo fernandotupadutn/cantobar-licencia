@@ -15,3 +15,9 @@ verify_jwt = false
 
 [functions.check-mp-order]
 verify_jwt = false
+
+# Firma de requests de QZ Tray para impresión silenciosa en la web.
+# Verifica la clave con la apikey en el código; verify_jwt en false para
+# que el OPTIONS/preflight del navegador llegue hasta la función.
+[functions.qz-sign]
+verify_jwt = false
