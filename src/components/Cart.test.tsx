@@ -19,7 +19,6 @@ function renderCart(overrides: Partial<Parameters<typeof Cart>[0]> = {}) {
     onRemove: noop,
     onClear: noop,
     onCheckout: noop,
-    onMercadoPago: noop,
     ...overrides,
   };
   return render(<Cart {...props} />);
@@ -53,6 +52,19 @@ describe('Cart', () => {
     renderCart({ onCheckout });
     await user.click(screen.getByText('Transferencia'));
     expect(onCheckout).toHaveBeenCalledWith('Transferencia');
+  });
+
+  it('llama a onCheckout con MercadoPago al tocar Pago QR', async () => {
+    const user = userEvent.setup();
+    const onCheckout = vi.fn();
+    renderCart({ onCheckout });
+    await user.click(screen.getByText('Pago QR'));
+    expect(onCheckout).toHaveBeenCalledWith('MercadoPago');
+  });
+
+  it('deshabilita Pago QR con el carrito vacío', () => {
+    renderCart({ items: [] });
+    expect(screen.getByText('Pago QR')).toBeDisabled();
   });
 
   it('llama a onClear al vaciar', async () => {

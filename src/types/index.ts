@@ -5,26 +5,6 @@
 export type PaymentMethod = 'Efectivo' | 'Transferencia' | 'MercadoPago';
 export type UserRole = 'admin' | 'vendedor';
 
-// Mercado Pago
-export interface MpOrderRequest {
-  total_amount: number;
-  external_reference: string;
-  items: { title: string; unit_price: number; quantity: number }[];
-}
-
-export interface MpOrderResponse {
-  order_id: string;
-  expiration_time: string;
-}
-
-export interface MpOrderStatus {
-  id: string;
-  status: string;
-  status_detail: string;
-  external_reference: string;
-  payment_id?: string | null;
-}
-
 export interface Profile {
   id: string; // = auth.users.id
   email: string;
