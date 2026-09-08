@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { QrCode, Loader2, CheckCircle2, XCircle, TriangleAlert } from 'lucide-react';
-import { checkMpOrder } from '../lib/mercadopago';
+import { toDataURL } from 'qrcode';
+import { checkMpOrder, MP_POS_STATIC_QR } from '../lib/mercadopago';
 import { CartItem } from '../types';
 import { formatCurrency } from '../lib/format';
 
 interface MercadoPagoQRProps {
   cart: CartItem[];
   orderId: string;
+  qrData: string | null;
   expirationSeconds: number;
   onPaid: (paymentId: string) => void;
   onCancel: () => void;
@@ -22,6 +24,7 @@ type Phase =
 export default function MercadoPagoQR({
   cart,
   orderId,
+  qrData,
   expirationSeconds,
   onPaid,
   onCancel,
@@ -31,7 +34,60 @@ export default function MercadoPagoQR({
   const [remaining, setRemaining] = useState(expirationSeconds);
   const [phase, setPhase] = useState<Phase>({ status: 'waiting' });
   const [paymentId, setPaymentId] = useState<string | null>(null);
+  const [qrImage, setQrImage] = useState<string | null>(null);
+  const [qrError, setQrError] = useState(false);
+  const [staticQrImage, setStaticQrImage] = useState<string | null>(null);
+  const [showCajaQr, setShowCajaQr] = useState(false);
   const paidRef = useRef(false);
+
+  // Genera la imagen del QR a partir del qr_data que devuelve MP.
+  useEffect(() => {
+    if (!qrData) {
+      setQrError(true);
+      return;
+    }
+    let cancelled = false;
+    toDataURL(qrData, { width: 240, margin: 0 })
+      .then((url) => {
+        if (!cancelled) setQrImage(url);
+      })
+      .catch(() => {
+        if (!cancelled) setQrError(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [qrData]);
+
+  // Genera la imagen del QR estático de la caja (modelo híbrido).
+  useEffect(() => {
+    let cancelled = false;
+    toDataURL(MP_POS_STATIC_QR, { width: 240, margin: 0 })
+      .then((url) => {
+        if (!cancelled) setStaticQrImage(url);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Imprime el QR visible (ventana nueva con solo la imagen).
+  function handlePrintQr() {
+    const image = showCajaQr ? staticQrImage : qrImage;
+    if (!image) return;
+    const win = window.open('', 'impresion-qr', 'width=320,height=360');
+    if (!win) return;
+    win.document.write(
+      '<html><head><title>QR Mercado Pago</title>' +
+        '<style>body{margin:0;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;color:#333}img{width:240px;height:240px}p{margin:8px 0 0;font-size:13px}</style>' +
+        '</head><body><img src="' +
+        image +
+        '" onload="window.print()" /><p>CantoBar - QR Mercado Pago</p></body></html>'
+    );
+    win.document.close();
+    win.focus();
+  }
 
   // Countdown de expiración
   useEffect(() => {
@@ -48,7 +104,13 @@ export default function MercadoPagoQR({
       if (cancelled || paidRef.current) return;
       try {
         const data = await checkMpOrder(orderId);
-        if (data.status === 'accredited') {
+        // Pagado: la order pasa a "processed" (y/o la transacción
+        // queda "processed"/"accredited").
+        const paid =
+          data.status === 'processed' ||
+          data.payment_status === 'processed' ||
+          data.payment_status_detail === 'accredited';
+        if (paid) {
           paidRef.current = true;
           setPaymentId(data.payment_id ?? null);
           setPhase({ status: 'paid' });
@@ -122,25 +184,82 @@ export default function MercadoPagoQR({
 
   return (
     <div className="flex flex-col gap-4">
+      <div className="flex bg-zinc-100 rounded-xl p-1 text-sm font-semibold">
+        <button
+          onClick={() => setShowCajaQr(false)}
+          className={`flex-1 py-2 rounded-lg transition-colors ${
+            !showCajaQr ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:text-zinc-700'
+          }`}
+        >
+          QR de esta venta
+        </button>
+        <button
+          onClick={() => setShowCajaQr(true)}
+          className={`flex-1 py-2 rounded-lg transition-colors ${
+            showCajaQr ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:text-zinc-700'
+          }`}
+        >
+          QR de la caja
+        </button>
+      </div>
+
       <div className="flex flex-col items-center justify-center py-6 text-center gap-4">
-        <div className="w-16 h-16 rounded-full bg-zinc-100 flex items-center justify-center">
-          {phase.status === 'error' ? (
-            <TriangleAlert className="w-9 h-9 text-amber-500" />
+        <div className="flex flex-col items-center justify-center gap-2">
+          {showCajaQr ? (
+            staticQrImage ? (
+              <div className="bg-white border border-zinc-200 rounded-2xl p-3 shadow-sm">
+                <img src={staticQrImage} alt="QR de la caja Mercado Pago" className="w-56 h-56" />
+              </div>
+            ) : (
+              <div className="w-16 h-16 rounded-full bg-zinc-100 flex items-center justify-center">
+                <QrCode className="w-9 h-9 text-zinc-700" />
+              </div>
+            )
+          ) : qrError ? (
+            <div className="w-16 h-16 rounded-full bg-zinc-100 flex items-center justify-center">
+              <TriangleAlert className="w-9 h-9 text-amber-500" />
+            </div>
+          ) : qrImage ? (
+            <div className="bg-white border border-zinc-200 rounded-2xl p-3 shadow-sm">
+              <img src={qrImage} alt="Código QR Mercado Pago" className="w-56 h-56" />
+            </div>
           ) : (
-            <QrCode className="w-9 h-9 text-zinc-700" />
+            <div className="w-16 h-16 rounded-full bg-zinc-100 flex items-center justify-center">
+              {phase.status === 'error' ? (
+                <TriangleAlert className="w-9 h-9 text-amber-500" />
+              ) : (
+                <QrCode className="w-9 h-9 text-zinc-700" />
+              )}
+            </div>
           )}
         </div>
 
         <div>
           <p className="font-bold text-zinc-900 text-lg">
-            {phase.status === 'error' ? 'No se pudo verificar el pago' : 'Cobrando con Mercado Pago'}
+            {showCajaQr
+              ? 'QR de la caja'
+              : phase.status === 'error'
+                ? 'No se pudo verificar el pago'
+                : qrError
+                  ? 'No se pudo generar el QR'
+                  : 'Cobrando con Mercado Pago'}
           </p>
           <p className="text-sm text-zinc-500 mt-1">
-            El QR se muestra en la pantalla del Point Smart. El comprador lo escanea con su app de Mercado Pago.
+            {showCajaQr ? (
+              <>
+                Escaneá este QR con la app de Mercado Pago para pagar esta venta.
+                <br />
+                Imprimilo una vez y pegálo en la barra: cada venta queda vinculada a él.
+              </>
+            ) : qrError ? (
+              'Volvé a intentar el cobro o usá otro método de pago.'
+            ) : (
+              'Escaneá el código con la app de Mercado Pago para pagar.'
+            )}
           </p>
         </div>
 
-        <div className="text-3xl font-extrabold text-zinc-900">{formatCurrency(total)}</div>
+        {!showCajaQr && <div className="text-3xl font-extrabold text-zinc-900">{formatCurrency(total)}</div>}
 
         <p className={`text-sm font-semibold ${remaining <= 60 ? 'text-red-600' : 'text-zinc-500'}`}>
           Expira en {mm}:{ss}
@@ -150,7 +269,7 @@ export default function MercadoPagoQR({
           <p className="text-xs text-zinc-400">{phase.message}</p>
         )}
 
-        {phase.status === 'waiting' && (
+        {phase.status === 'waiting' && !qrError && (
           <div className="flex items-center gap-2 text-sm text-zinc-500">
             <Loader2 className="w-4 h-4 text-[#E06D00] animate-spin" />
             Esperando el pago...
@@ -159,6 +278,13 @@ export default function MercadoPagoQR({
       </div>
 
       <div className="flex gap-2">
+        <button
+          onClick={handlePrintQr}
+          disabled={!qrImage && !staticQrImage}
+          className="flex-1 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-bold py-3 rounded-xl transition-colors disabled:opacity-50"
+        >
+          Imprimir QR
+        </button>
         <button
           onClick={onCancel}
           className="flex-1 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-bold py-3 rounded-xl transition-colors"

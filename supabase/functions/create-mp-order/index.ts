@@ -1,33 +1,36 @@
 // ============================================================
 // Edge Function "create-mp-order": crea una order de pago en
-// Mercado Pago (Orders API, type: "point") configurada para que el
-// Terminal Point Smart muestre el QR Code en su propia pantalla.
+// Mercado Pago (Orders API, type: "qr", modo híbrido) y devuelve
+// el `qr_data` para que el POS renderice el código QR en pantalla
+// (producto "Código QR" de Mercado Pago). El comprador lo escanea
+// con su app de Mercado Pago y paga el monto exacto de la order.
 //
-// El Access Token de MercadoPago y el terminal_id son SECRETS del
-// servidor (MERCADOPAGO_ACCESS_TOKEN / MP_TERMINAL_ID). Nunca se
-// exponen al cliente.
+// En modo HÍBRIDO la order queda vinculada al QR estático de la
+// caja (el que se imprime o se pega en la barra) Y se genera un QR
+// dinámico único. Si el pago se realiza con cualquiera de los dos,
+// el otro queda automáticamente inhabilitado (sin cobro doble).
+//
+// El Access Token y la caja QR son SECRETS del servidor:
+//   MERCADOPAGO_ACCESS_TOKEN – Access Token de producción de MP.
+//   MERCADOPAGO_QR_POS_ID    – external_id de la caja QR creada vía
+//                              POST /v2/pos (p.ej. CANTOBARQR01).
+// Nunca se exponen al cliente.
 //
 // Cómo funciona:
 //   1. El POS llama con { items, total_amount, external_reference }.
-//   2. Se crea la order type "point" con
-//      config.payment_method.default_type = "qr".
-//   3. MercadoPago "envía" la order a la terminal Point Smart, que
-//      la carga y muestra el QR en su pantalla táctil (el comprador
-//      lo escanea con la app de MercadoPago).
-//   4. Se devuelve { order_id, expiration_time }. El POS hace polling
-//      con check-mp-order hasta que el pago se acredite.
-//
-// PyLD / requisitos:
-//   - Terminal Point en modo PDV (asociado a una caja/store).
-//   - Secrets: MERCADOPAGO_ACCESS_TOKEN y MP_TERMINAL_ID.
+//   2. Se crea una order type "qr" (mode "hybrid") vinculada a la
+//      caja QR. MP genera un código exclusivo para esta order y
+//      habilita el QR estático de la caja para la misma order.
+//   3. Se devuelve { order_id, expiration_time, qr_data }. El POS
+//      muestra el QR ("qr_data") y hace polling con check-mp-order
+//      hasta que el pago se acredite.
 //
 // Deploy:
 //   SUPABASE_ACCESS_TOKEN=... pnpm dlx supabase functions deploy create-mp-order
-//   Y cargar MERCADOPAGO_ACCESS_TOKEN y MP_TERMINAL_ID como secrets.
 // ============================================================
 
 const MP_ACCESS_TOKEN = Deno.env.get('MERCADOPAGO_ACCESS_TOKEN');
-const MP_TERMINAL_ID = Deno.env.get('MERCADOPAGO_TERMINAL_ID');
+const MP_QR_POS_ID = Deno.env.get('MERCADOPAGO_QR_POS_ID');
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -50,8 +53,8 @@ async function handleRequest(req: Request): Promise<Response> {
   if (!MP_ACCESS_TOKEN) {
     return json({ error: 'Falta configurar MERCADOPAGO_ACCESS_TOKEN en el servidor' }, { status: 500 });
   }
-  if (!MP_TERMINAL_ID) {
-    return json({ error: 'Falta configurar MERCADOPAGO_TERMINAL_ID en el servidor' }, { status: 500 });
+  if (!MP_QR_POS_ID) {
+    return json({ error: 'Falta configurar MERCADOPAGO_QR_POS_ID en el servidor' }, { status: 500 });
   }
 
   let body: { items?: { title: string; unit_price: number; quantity: number }[]; total_amount?: number; external_reference?: string };
@@ -72,27 +75,33 @@ async function handleRequest(req: Request): Promise<Response> {
     return json({ error: 'external_reference inválida (máx 64 chars, solo letras/números/_/-)' }, { status: 400 });
   }
 
-  const mpPayload = {
-    type: 'point',
-    external_reference: externalReference,
+  const mpPayload: Record<string, unknown> = {
+    type: 'qr',
+    total_amount: total.toFixed(2),
     description: 'CantoBar - Venta en local',
-    expiration_time: 'PT5M',
-    processing_mode: 'automatic',
-    // default_type "qr" hace que la terminal Point Smart muestre el
-    // QR code en su pantalla (short de la order que carga el terminal).
+    external_reference: externalReference,
+    // 15 min de validez: es el default de MP para Código QR y alcanza
+    // de sobra para que el comprador escanee y pague.
+    expiration_time: 'PT15M',
     config: {
-      point: {
-        terminal_id: MP_TERMINAL_ID,
-        print_on_terminal: 'no_ticket',
-      },
-      payment_method: {
-        default_type: 'qr',
+      qr: {
+        // external_id de la caja QR creada con POST /v2/pos.
+        external_pos_id: MP_QR_POS_ID,
+        // "hybrid": MP genera un QR dinámico exclusivo por order (del
+        // campo `qr_data`) Y vincula la order al QR estático de la
+        // caja. Pagando con cualquiera de los dos, el otro se inhabilita.
+        mode: 'hybrid',
       },
     },
     transactions: {
       payments: [{ amount: total.toFixed(2) }],
     },
   };
+
+  // Nota: no se envían "items" a MP porque exige "unit_measure" por
+  // item (obligatorio en orders QR) y el detalle del carrito ya queda
+  // registrado en nuestra DB al confirmar la venta. El "description"
+  // alcanza para identificar la order en el panel de MP.
 
   let mpRes: Response;
   try {
@@ -101,6 +110,7 @@ async function handleRequest(req: Request): Promise<Response> {
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${MP_ACCESS_TOKEN}`,
+        'X-Idempotency-Key': crypto.randomUUID(),
       },
       body: JSON.stringify(mpPayload),
     });
@@ -119,9 +129,20 @@ async function handleRequest(req: Request): Promise<Response> {
     );
   }
 
+  // MP devuelve el código único de la order en "type_response.qr_data"
+  // (puede ser objeto o array según el caso).
+  const typeResponse = mpData?.type_response;
+  const qrData = Array.isArray(typeResponse) ? typeResponse[0]?.qr_data : typeResponse?.qr_data;
+
+  if (!qrData) {
+    console.error('create-mp-order: la order no devolvió qr_data', mpData);
+    return json({ error: 'MercadoPago no generó el código QR para esta order' }, { status: 502 });
+  }
+
   return json({
     order_id: mpData?.id,
-    expiration_time: mpData?.expiration_time ?? 'PT5M',
+    expiration_time: mpData?.expiration_time ?? 'PT15M',
+    qr_data: qrData,
   });
 }
 

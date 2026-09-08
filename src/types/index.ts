@@ -15,6 +15,7 @@ export interface MpOrderRequest {
 export interface MpOrderResponse {
   order_id: string;
   expiration_time: string;
+  qr_data?: string | null;
 }
 
 export interface MpOrderStatus {
@@ -23,6 +24,8 @@ export interface MpOrderStatus {
   status_detail: string;
   external_reference: string;
   payment_id?: string | null;
+  payment_status?: string | null;
+  payment_status_detail?: string | null;
 }
 
 export interface Profile {

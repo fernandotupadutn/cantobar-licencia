@@ -95,11 +95,10 @@ export default function Cart({
 
         <button
           onClick={onMercadoPago}
-          disabled
-          title="Próximamente"
-          className="mt-2 w-full border-2 border-zinc-200 text-zinc-400 font-bold py-3 rounded-xl transition-colors cursor-not-allowed"
+          disabled={isEmpty || isCharging}
+          className="mt-2 w-full border-2 border-[#009EE3] text-[#009EE3] hover:bg-[#009EE3] hover:text-white font-bold py-3 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
         >
-          Mercado Pago (QR) — No disponible
+          Mercado Pago (QR)
         </button>
 
         <p className="text-xs text-zinc-400 text-center mt-3">

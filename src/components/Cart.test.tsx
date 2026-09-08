@@ -55,6 +55,19 @@ describe('Cart', () => {
     expect(onCheckout).toHaveBeenCalledWith('Transferencia');
   });
 
+  it('llama a onMercadoPago al tocar Mercado Pago (QR)', async () => {
+    const user = userEvent.setup();
+    const onMercadoPago = vi.fn();
+    renderCart({ onMercadoPago });
+    await user.click(screen.getByText(/Mercado Pago \(QR\)/i));
+    expect(onMercadoPago).toHaveBeenCalled();
+  });
+
+  it('deshabilita Mercado Pago (QR) con el carrito vacío', () => {
+    renderCart({ items: [] });
+    expect(screen.getByText(/Mercado Pago \(QR\)/i)).toBeDisabled();
+  });
+
   it('llama a onClear al vaciar', async () => {
     const user = userEvent.setup();
     const onClear = vi.fn();

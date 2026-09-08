@@ -29,7 +29,7 @@ import SubscriptionGuard from './components/SubscriptionGuard';
 import MercadoPagoQR from './components/MercadoPagoQR';
 import UpdateBanner from './components/UpdateBanner';
 import VersionFooter from './components/VersionFooter';
-import { createMpOrder } from './lib/mercadopago';
+import { createMpOrder, cancelMpOrder } from './lib/mercadopago';
 import { printThermalTicket } from './lib/thermalPrint';
 
 function AppContent({ profile }: { profile: Profile }) {
@@ -63,7 +63,11 @@ function AppContent({ profile }: { profile: Profile }) {
   }>({ open: false, drink: null });
 
   const [ticketToPrint, setTicketToPrint] = useState<SaleWithItems | null>(null);
-  const [mpSession, setMpSession] = useState<{ orderId: string; expirationSeconds: number } | null>(null);
+  const [mpSession, setMpSession] = useState<{
+    orderId: string;
+    expirationSeconds: number;
+    qrData: string | null;
+  } | null>(null);
   const [isConfirmingMp, setIsConfirmingMp] = useState(false);
 
   // ---------------------------------------------------------------
@@ -273,12 +277,18 @@ function AppContent({ profile }: { profile: Profile }) {
   }
 
   // ---------------------------------------------------------------
-  // Mercado Pago: inicia un cobro QR. Crea la order en MP (que la
-  // carga el Point Smart), muestra el modal con polling y, cuando
-  // el pago se acredita, registra la venta.
+  // Mercado Pago: inicia un cobro QR. Crea la order en MP (Código QR,
+  // modo dinámico), muestra el QR en pantalla con polling y, cuando el
+  // pago se acredita, registra la venta.
   // ---------------------------------------------------------------
   async function handleMercadoPago() {
     if (cart.length === 0) return;
+    // MP rechaza orders QR con montos menores a $15.00.
+    const total = cart.reduce((acc, i) => acc + i.unit_price * i.quantity, 0);
+    if (total < 15) {
+      alert('El monto mínimo para cobrar con Mercado Pago es de $15,00.');
+      return;
+    }
     setIsCharging(true);
     try {
       // Referencia externa única para poder conciliar la venta.
@@ -287,6 +297,7 @@ function AppContent({ profile }: { profile: Profile }) {
       setMpSession({
         orderId: order.order_id,
         expirationSeconds: parseDurationSeconds(order.expiration_time),
+        qrData: order.qr_data ?? null,
       });
     } catch (err) {
       console.error('Error iniciando Mercado Pago:', err);
@@ -318,8 +329,18 @@ function AppContent({ profile }: { profile: Profile }) {
     }
   }
 
-  function handleMpCancel() {
+  async function handleMpCancel() {
     if (isConfirmingMp) return;
+    // Cancela la order en MercadoPago para no dejar orders pendientes
+    // colgadas en la caja QR. Si la cancelación falla, igual se cierra
+    // el modal: la order expira sola en ~15 min.
+    if (mpSession) {
+      try {
+        await cancelMpOrder(mpSession.orderId);
+      } catch (err) {
+        console.error('Error cancelando la order de Mercado Pago:', err);
+      }
+    }
     setMpSession(null);
   }
 
@@ -530,6 +551,7 @@ function AppContent({ profile }: { profile: Profile }) {
             <MercadoPagoQR
               cart={cart}
               orderId={mpSession.orderId}
+              qrData={mpSession.qrData}
               expirationSeconds={mpSession.expirationSeconds}
               onPaid={handleMpPaid}
               onCancel={handleMpCancel}

@@ -18,12 +18,13 @@
     "dist:win:publish": "electron-vite build && electron-builder --win --publish always",
     "dist:mac": "electron-vite build && electron-builder --mac",
     "dist:linux": "electron-vite build && electron-builder --linux",
-    "deploy:functions": "pnpm dlx supabase functions deploy create-user --project-ref ltxtymctpijyzcntamin --no-verify-jwt && pnpm dlx supabase functions deploy create-mp-order --project-ref ltxtymctpijyzcntamin --no-verify-jwt && pnpm dlx supabase functions deploy check-mp-order --project-ref ltxtymctpijyzcntamin --no-verify-jwt && pnpm dlx supabase functions deploy qz-sign --project-ref ltxtymctpijyzcntamin --no-verify-jwt"
+    "deploy:functions": "pnpm dlx supabase functions deploy create-user --project-ref ltxtymctpijyzcntamin --no-verify-jwt && pnpm dlx supabase functions deploy create-mp-order --project-ref ltxtymctpijyzcntamin --no-verify-jwt && pnpm dlx supabase functions deploy check-mp-order --project-ref ltxtymctpijyzcntamin --no-verify-jwt && pnpm dlx supabase functions deploy cancel-mp-order --project-ref ltxtymctpijyzcntamin --no-verify-jwt && pnpm dlx supabase functions deploy qz-sign --project-ref ltxtymctpijyzcntamin --no-verify-jwt"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",
     "electron-updater": "^6.8.9",
     "lucide-react": "^0.441.0",
+    "qrcode": "^1.5.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
@@ -33,6 +34,7 @@
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.4",
     "@types/node": "^26.4.0",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",

@@ -4,9 +4,14 @@
 //
 // El Access Token es un SECRET del servidor (MERCADOPAGO_ACCESS_TOKEN).
 //
-// Uso: GET ?order_id=ORD...
-// Devolución: { id, status, status_detail, external_reference }
-//   status posible: created, canceled, accredited, refunded, expired
+// Uso: GET  ?order_id=ORD...   (o POST con body { order_id })
+// Devolución: { id, status, status_detail, external_reference,
+//               payment_id, payment_status, payment_status_detail }
+//
+// Estados (order / transacción):
+//   - Pagado: order status = "processed" (status_detail "processed") y/o
+//     transacción status "processed" / status_detail "accredited".
+//   - Expirada: status "expired". Cancelada: "canceled".
 // ============================================================
 
 const MP_ACCESS_TOKEN = Deno.env.get('MERCADOPAGO_ACCESS_TOKEN');
@@ -14,7 +19,7 @@ const MP_ACCESS_TOKEN = Deno.env.get('MERCADOPAGO_ACCESS_TOKEN');
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'GET, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
 };
 
 function json(body: unknown, init: ResponseInit = {}) {
@@ -25,16 +30,24 @@ function json(body: unknown, init: ResponseInit = {}) {
 }
 
 async function handleRequest(req: Request): Promise<Response> {
-  if (req.method !== 'GET') {
-    return json({ error: 'Método no permitido' }, { status: 405 });
-  }
-
   if (!MP_ACCESS_TOKEN) {
     return json({ error: 'Falta configurar MERCADOPAGO_ACCESS_TOKEN en el servidor' }, { status: 500 });
   }
 
-  const url = new URL(req.url);
-  const orderId = url.searchParams.get('order_id');
+  let orderId: string | null = null;
+  if (req.method === 'GET') {
+    orderId = new URL(req.url).searchParams.get('order_id');
+  } else if (req.method === 'POST') {
+    try {
+      const body = await req.json();
+      orderId = typeof body?.order_id === 'string' ? body.order_id : null;
+    } catch {
+      return json({ error: 'JSON inválido' }, { status: 400 });
+    }
+  } else {
+    return json({ error: 'Método no permitido' }, { status: 405 });
+  }
+
   if (!orderId) {
     return json({ error: 'Falta order_id' }, { status: 400 });
   }
@@ -57,8 +70,8 @@ async function handleRequest(req: Request): Promise<Response> {
     return json({ error: 'MercadoPago no pudo resolver la order', status: mpRes.status }, { status: 502 });
   }
 
-  const paymentId =
-    mpData?.transactions?.payments?.[0]?.id ?? mpData?.transactions?.payments?.[0]?.payment_id ?? null;
+  const payment = mpData?.transactions?.payments?.[0];
+  const paymentId = payment?.id ?? payment?.payment_id ?? null;
 
   return json({
     id: mpData?.id,
@@ -66,6 +79,8 @@ async function handleRequest(req: Request): Promise<Response> {
     status_detail: mpData?.status_detail,
     external_reference: mpData?.external_reference,
     payment_id: paymentId,
+    payment_status: payment?.status ?? null,
+    payment_status_detail: payment?.status_detail ?? null,
   });
 }
 
