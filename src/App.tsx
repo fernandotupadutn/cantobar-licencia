@@ -4,6 +4,7 @@ import { supabase } from './lib/supabaseClient';
 import { useAuth, AuthProvider } from './lib/AuthContext';
 import {
   CartItem,
+  CashRegister,
   Category,
   CategoryFormData,
   Drink,
@@ -20,6 +21,8 @@ import SearchBar from './components/SearchBar';
 import CategorySection from './components/CategorySection';
 import Cart from './components/Cart';
 import SalesHistory from './components/SalesHistory';
+import CashRegisterPanel from './components/CashRegisterPanel';
+import StatisticsPanel from './components/StatisticsPanel';
 import CategoryModal from './components/CategoryModal';
 import DrinkModal from './components/DrinkModal';
 import ThermalTicket from './components/ThermalTicket';
@@ -29,6 +32,20 @@ import SubscriptionGuard from './components/SubscriptionGuard';
 import UpdateBanner from './components/UpdateBanner';
 import VersionFooter from './components/VersionFooter';
 import { printThermalTicket } from './lib/thermalPrint';
+import { cacheRead, cacheSave, cacheClear } from './lib/offlineCache';
+import {
+  buildPendingSale,
+  enqueuePendingSale,
+  getPendingSales,
+  isNetworkError,
+  pendingSalesCount,
+  pendingToSale,
+  syncPendingSales,
+} from './lib/offlineSales';
+import OfflineSyncBanner from './components/OfflineSyncBanner';
+
+// La venta offline solo existe en la app de escritorio (Electron).
+const IS_ELECTRON = typeof window !== 'undefined' && !!window.electronAPI?.isElectron;
 
 function AppContent({ profile }: { profile: Profile }) {
   const { signOut } = useAuth();
@@ -49,6 +66,11 @@ function AppContent({ profile }: { profile: Profile }) {
   const [sales, setSales] = useState<SaleWithItems[]>([]);
   const [loadingSales, setLoadingSales] = useState(false);
   const [isCharging, setIsCharging] = useState(false);
+  const [openCashRegister, setOpenCashRegister] = useState<CashRegister | null>(null);
+
+  const [isOnline, setIsOnline] = useState(() => (typeof navigator !== 'undefined' ? navigator.onLine : true));
+  const [pendingCount, setPendingCount] = useState(() => pendingSalesCount());
+  const [syncStatus, setSyncStatus] = useState<{ syncing: boolean; errorMessage?: string }>({ syncing: false });
 
   const [categoryModalState, setCategoryModalState] = useState<{ open: boolean; category: Category | null }>({
     open: false,
@@ -69,6 +91,7 @@ function AppContent({ profile }: { profile: Profile }) {
     loadLocalConfig();
     loadCategories();
     loadDrinks();
+    loadOpenCashRegister();
   }, []);
 
   useEffect(() => {
@@ -97,20 +120,65 @@ function AppContent({ profile }: { profile: Profile }) {
     };
   }, [ticketToPrint, localConfig]);
 
-  // Si un vendedor quedaba con el panel de admin abierto y pierde el rol, lo mandamos a Vender
+  // Si un vendedor quedaba con un panel de admin abierto y pierde el rol, lo mandamos a Vender
   useEffect(() => {
-    if (!isAdmin && activeView === 'admin') {
+    if (!isAdmin && (activeView === 'admin' || activeView === 'stats')) {
       setActiveView('sell');
     }
   }, [isAdmin, activeView]);
+
+  // ---------------------------------------------------------------
+  // Ventas offline (solo escritorio): detecta la conexión y, en cuanto
+  // vuelve internet, sincroniza la cola automáticamente.
+  // ---------------------------------------------------------------
+  useEffect(() => {
+    if (!IS_ELECTRON) return;
+    const onOnline = () => {
+      setIsOnline(true);
+      runSync();
+    };
+    const onOffline = () => setIsOnline(false);
+    window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
+    return () => {
+      window.removeEventListener('online', onOnline);
+      window.removeEventListener('offline', onOffline);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Reintento automático mientras haya pendientes y haya conexión.
+  useEffect(() => {
+    if (!IS_ELECTRON || !isOnline || pendingCount === 0) return;
+    const id = window.setInterval(() => {
+      runSync();
+    }, 20000);
+    return () => window.clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOnline, pendingCount]);
+
+  async function runSync() {
+    if (pendingSalesCount() === 0) return;
+    setSyncStatus({ syncing: true });
+    const result = await syncPendingSales();
+    setPendingCount(pendingSalesCount());
+    setSyncStatus({ syncing: false, errorMessage: result.errorMessage });
+    if (result.synced > 0) {
+      loadSales();
+    }
+  }
 
   async function loadLocalConfig() {
     const { data, error } = await supabase.from('local_config').select('*').limit(1).maybeSingle();
     if (error) {
       console.error('Error cargando local_config:', error.message);
+      const cached = cacheRead<LocalConfig>('local_config');
+      if (cached) setLocalConfig(cached);
       return;
     }
-    setLocalConfig(data as LocalConfig | null);
+    const config = data as LocalConfig | null;
+    if (config) cacheSave('local_config', config);
+    setLocalConfig(config);
   }
 
   async function loadCategories() {
@@ -120,18 +188,44 @@ function AppContent({ profile }: { profile: Profile }) {
       .order('display_order', { ascending: true });
     if (error) {
       console.error('Error cargando categories:', error.message);
+      const cached = cacheRead<Category[]>('categories');
+      if (cached) setCategories(cached);
       return;
     }
-    setCategories((data ?? []) as Category[]);
+    const list = (data ?? []) as Category[];
+    cacheSave('categories', list);
+    setCategories(list);
   }
 
   async function loadDrinks() {
     const { data, error } = await supabase.from('drinks').select('*').order('name', { ascending: true });
     if (error) {
       console.error('Error cargando drinks:', error.message);
+      const cached = cacheRead<Drink[]>('drinks');
+      if (cached) setDrinks(cached);
       return;
     }
-    setDrinks((data ?? []) as Drink[]);
+    const list = (data ?? []) as Drink[];
+    cacheSave('drinks', list);
+    setDrinks(list);
+  }
+
+  async function loadOpenCashRegister() {
+    const { data, error } = await supabase
+      .from('cash_registers')
+      .select('*')
+      .eq('status', 'open')
+      .maybeSingle();
+    if (error) {
+      console.error('Error cargando caja abierta:', error.message);
+      const cached = cacheRead<CashRegister>('open_cash_register');
+      if (cached) setOpenCashRegister(cached);
+      return;
+    }
+    const register = data as CashRegister | null;
+    if (register) cacheSave('open_cash_register', register);
+    else cacheClear('open_cash_register');
+    setOpenCashRegister(register);
   }
 
   async function loadSales() {
@@ -143,6 +237,10 @@ function AppContent({ profile }: { profile: Profile }) {
 
     if (salesError) {
       console.error('Error cargando sales:', salesError.message);
+      if (IS_ELECTRON) {
+        const cached = cacheRead<SaleWithItems[]>('sales_history');
+        if (cached) setSales(cached);
+      }
       setLoadingSales(false);
       return;
     }
@@ -166,6 +264,7 @@ function AppContent({ profile }: { profile: Profile }) {
     });
 
     setSales(salesWithItems);
+    cacheSave('sales_history', salesWithItems);
     setLoadingSales(false);
   }
 
@@ -221,18 +320,27 @@ function AppContent({ profile }: { profile: Profile }) {
   // ---------------------------------------------------------------
   async function handleCheckout(method: PaymentMethod, mpRefs?: { orderId?: string; paymentId?: string }) {
     if (cart.length === 0) return;
+
+    // No se puede vender sin caja abierta (lo refuerza también la RPC).
+    if (!openCashRegister) {
+      alert('No hay una caja abierta. Abrí la caja antes de vender.');
+      return;
+    }
+
     setIsCharging(true);
 
     try {
       // La venta se registra vía la RPC create_sale(): el servidor
-      // resuelve precio/nombre/disponibilidad del catálogo y calcula
-      // el total. El cliente solo envía drink_id + quantity, así no
-      // se pueden inventar precios ni montos desde el navegador.
+      // resuelve precio/nombre/disponibilidad del catálogo, calcula
+      // el total y la atribuye a la caja abierta. El cliente solo
+      // envía drink_id + quantity, así no se pueden inventar precios
+      // ni montos desde el navegador.
       const { data, error } = await supabase.rpc('create_sale', {
         p_payment_method: method,
         p_items: cart.map((item) => ({ drink_id: item.drink_id, quantity: item.quantity })),
         p_mp_order_id: mpRefs?.orderId ?? null,
         p_mp_payment_id: mpRefs?.paymentId ?? null,
+        p_cash_register_id: openCashRegister.id,
       });
 
       if (error || !data) throw error ?? new Error('No se pudo crear la venta');
@@ -246,9 +354,31 @@ function AppContent({ profile }: { profile: Profile }) {
       setSales((prev) => [saleWithItems, ...prev]);
       clearCart();
     } catch (err) {
-      console.error('Error al registrar la venta:', err);
-      const message = getErrorMessage(err);
-      alert(`Hubo un error al registrar la venta: ${message}`);
+      // Sin conexión y en la app de escritorio: la venta se guarda en
+      // la cola local, se imprime el ticket igual y se sincroniza sola
+      // (con el mismo id) cuando vuelva internet. La web no hace esto.
+      if (IS_ELECTRON && isNetworkError(err)) {
+        const pending = buildPendingSale({
+          cart,
+          method,
+          cashRegisterId: openCashRegister.id,
+          sellerName: profile.full_name || profile.email,
+          mpOrderId: mpRefs?.orderId,
+          mpPaymentId: mpRefs?.paymentId,
+        });
+        enqueuePendingSale(pending);
+        setPendingCount((c) => c + 1);
+
+        const local = pendingToSale(pending);
+        setTicketToPrint(local);
+        setSales((prev) => [local, ...prev]);
+        clearCart();
+        alert('Sin internet: la venta quedó guardada y se imprimirá el ticket. Se sincroniza sola cuando vuelva la conexión.');
+      } else {
+        console.error('Error al registrar la venta:', err);
+        const message = getErrorMessage(err);
+        alert(`Hubo un error al registrar la venta: ${message}`);
+      }
     } finally {
       setIsCharging(false);
     }
@@ -275,6 +405,25 @@ function AppContent({ profile }: { profile: Profile }) {
   // ---------------------------------------------------------------
   function handleReprint(sale: SaleWithItems) {
     setTicketToPrint(sale);
+  }
+
+  // Corrige el método de pago de una venta ya registrada (cualquier vendedor).
+  async function handleChangePaymentMethod(saleId: string, method: PaymentMethod) {
+    const { data, error } = await supabase.rpc('update_sale_payment_method', {
+      p_sale_id: saleId,
+      p_payment_method: method,
+    });
+    if (error || !data) {
+      const message = error?.message.replace(/^.*?: update_sale_payment_method:\s*/i, '');
+      alert(`No se pudo cambiar el método de pago: ${message ?? 'error desconocido'}`);
+      throw error ?? new Error('No se pudo cambiar el método de pago');
+    }
+    const updated = data as SaleWithItems;
+    setSales((prev) => prev.map((s) => (s.id === updated.id ? { ...s, payment_method: updated.payment_method } : s)));
+  }
+
+  function handleRegisterChange() {
+    loadOpenCashRegister();
   }
 
   async function saveLocalConfig(formData: LocalConfigFormData) {
@@ -441,7 +590,31 @@ function AppContent({ profile }: { profile: Profile }) {
         {activeView === 'history' && (
           <div className="max-w-3xl mx-auto">
             <h2 className="text-lg font-bold text-zinc-900 mb-4">Historial de ventas</h2>
-            <SalesHistory sales={sales} loading={loadingSales} onReprint={handleReprint} />
+            <SalesHistory
+              sales={sales}
+              pendingSales={pendingCount > 0 ? getPendingSales().map(pendingToSale) : []}
+              loading={loadingSales}
+              onReprint={handleReprint}
+              onChangePaymentMethod={handleChangePaymentMethod}
+            />
+          </div>
+        )}
+
+        {activeView === 'cash' && (
+          <div className="max-w-3xl mx-auto">
+            <h2 className="text-lg font-bold text-zinc-900 mb-4">Caja</h2>
+            <CashRegisterPanel
+              openRegister={openCashRegister}
+              profile={profile}
+              onRegisterChange={handleRegisterChange}
+            />
+          </div>
+        )}
+
+        {activeView === 'stats' && isAdmin && (
+          <div className="max-w-5xl mx-auto">
+            <h2 className="text-lg font-bold text-zinc-900 mb-4">Estadísticas</h2>
+            <StatisticsPanel />
           </div>
         )}
 
@@ -472,6 +645,15 @@ function AppContent({ profile }: { profile: Profile }) {
       {ticketToPrint && <ThermalTicket sale={ticketToPrint} localConfig={localConfig} />}
 
       <UpdateBanner />
+
+      <OfflineSyncBanner
+        isElectron={IS_ELECTRON}
+        isOnline={isOnline}
+        pendingCount={pendingCount}
+        syncing={syncStatus.syncing}
+        errorMessage={syncStatus.errorMessage}
+        onSync={runSync}
+      />
     </div>
   );
 }

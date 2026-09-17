@@ -4,6 +4,7 @@
 
 export type PaymentMethod = 'Efectivo' | 'Transferencia' | 'MercadoPago';
 export type UserRole = 'admin' | 'vendedor';
+export type CashRegisterStatus = 'open' | 'closed';
 
 export interface Profile {
   id: string; // = auth.users.id
@@ -46,6 +47,7 @@ export interface Sale {
   created_at: string;
   mp_order_id?: string | null;
   mp_payment_id?: string | null;
+  cash_register_id?: string | null;
 }
 
 export interface SaleItem {
@@ -72,6 +74,29 @@ export interface CartItem {
   unit_price: number;
   quantity: number;
 }
+
+// Caja del local: una sola abierta por vez. Los totales del cierre
+// se completan en el servidor al ejecutar close_cash_register().
+export interface CashRegister {
+  id: string;
+  status: CashRegisterStatus;
+  started_by: string | null;
+  opened_at: string;
+  closed_at: string | null;
+  opening_amount: number;
+  expected_amount: number | null;
+  counted_amount: number | null;
+  difference: number | null;
+  closed_by: string | null;
+  note: string;
+  sales_count: number;
+  efectivo_total: number;
+  transferencia_total: number;
+  mercado_pago_total: number;
+}
+
+export type CashRegisterFormData = Pick<CashRegister, 'opening_amount'>;
+export type CashRegisterCloseFormData = { counted_amount: number; note: string };
 
 // Formularios de alta/edición
 export type CategoryFormData = Pick<Category, 'name' | 'display_order' | 'is_active'>;

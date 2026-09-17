@@ -2,6 +2,7 @@ import { createContext, ReactNode, useContext, useEffect, useState } from 'react
 import { Session } from '@supabase/supabase-js';
 import { supabase } from './supabaseClient';
 import { Profile } from '../types';
+import { cacheRead, cacheSave, profileCacheKey } from './offlineCache';
 
 interface AuthContextValue {
   session: Session | null;
@@ -46,9 +47,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   async function loadProfile(userId: string) {
     const { data, error } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
     if (error) {
+      // Sin internet (o error de red): el perfil se recupera del cache
+      // para que la app siga abierta. El rol cacheado ya fue validado
+      // cuando se cargó online.
       console.error('Error cargando el perfil:', error.message);
+      const cached = cacheRead<Profile>(profileCacheKey(userId));
+      if (cached) {
+        setProfile(cached);
+        setLoading(false);
+        return;
+      }
     }
-    setProfile((data as Profile) ?? null);
+    const profile = (data as Profile) ?? null;
+    if (profile) cacheSave(profileCacheKey(profile.id), profile);
+    setProfile(profile);
     setLoading(false);
   }
 

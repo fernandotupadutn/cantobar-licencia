@@ -1,7 +1,7 @@
-import { Martini, History, ShieldCheck, LogOut } from 'lucide-react';
+import { Martini, History, Wallet, BarChart3, ShieldCheck, LogOut } from 'lucide-react';
 import { LocalConfig, Profile } from '../types';
 
-export type ActiveView = 'sell' | 'history' | 'admin';
+export type ActiveView = 'sell' | 'history' | 'cash' | 'stats' | 'admin';
 
 interface NavbarProps {
   localConfig: LocalConfig | null;
@@ -51,6 +51,28 @@ export default function Navbar({ localConfig, profile, activeView, onChangeView,
             <History className="w-4 h-4" />
             <span className="hidden sm:inline">Historial</span>
           </button>
+
+          <button
+            onClick={() => onChangeView('cash')}
+            className={`flex items-center gap-2 px-3 sm:px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
+              activeView === 'cash' ? 'bg-[#E06D00] text-white' : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
+            }`}
+          >
+            <Wallet className="w-4 h-4" />
+            <span className="hidden sm:inline">Caja</span>
+          </button>
+
+          {isAdmin && (
+            <button
+              onClick={() => onChangeView('stats')}
+              className={`flex items-center gap-2 px-3 sm:px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                activeView === 'stats' ? 'bg-[#E06D00] text-white' : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
+              }`}
+            >
+              <BarChart3 className="w-4 h-4" />
+              <span className="hidden sm:inline">Estadísticas</span>
+            </button>
+          )}
 
           {isAdmin && (
             <button
