@@ -21,6 +21,7 @@ export interface LocalConfig {
   phone: string;
   cuit: string;
   ticket_footer_message: string;
+  printer_name: string;
 }
 
 export interface Category {

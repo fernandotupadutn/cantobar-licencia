@@ -87,7 +87,8 @@ create table if not exists local_config (
   address text not null default '',
   phone text not null default '',
   cuit text not null default '',
-  ticket_footer_message text not null default '¡Gracias por tu visita!'
+  ticket_footer_message text not null default '¡Gracias por tu visita!',
+  printer_name text not null default ''
 );
 
 create table if not exists categories (

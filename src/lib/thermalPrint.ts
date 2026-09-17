@@ -91,6 +91,18 @@ function safeText(text: string): string {
   return text.replace(/[\u0000-\u001F\u007F\u00A0\u2007\u202F]/g, ' ');
 }
 
+// Elige la impresora pedida entre las disponibles: primero coincidencia
+// exacta (sin distinguir mayúsculas) y si no, coincidencia parcial.
+// Devuelve null si no hay ninguna. Exportada para testear sin QZ.
+export function pickPrinter(printers: string[], wanted: string): string | null {
+  const target = wanted.trim().toLowerCase();
+  if (!target) return null;
+  const exact = printers.find((p) => p.toLowerCase() === target);
+  if (exact) return exact;
+  const partial = printers.find((p) => p.toLowerCase().includes(target));
+  return partial ?? null;
+}
+
 export function buildEscPosTicket(sale: SaleWithItems, localConfig: LocalConfig | null): string {
   const L = localConfig;
   const blocks: string[] = [];
@@ -278,6 +290,64 @@ async function ensureQzSecurity(qz: Qz): Promise<boolean> {
   }
 }
 
+// Lista las impresoras que QZ Tray ve en esta PC (para el admin).
+export async function listQzPrinters(): Promise<string[]> {
+  const qz = getQz();
+  if (!qz) throw new Error('QZ Tray no está disponible en esta instalación');
+  await withTimeout(connectQz(), 12_000, 'La conexión con QZ Tray');
+  const printers = await withTimeout(qz.printers.find(), 10_000, 'Listar impresoras');
+  return (printers ?? []) as unknown as string[];
+}
+
+// Resuelve a qué impresora mandar el ticket:
+//   - si localConfig.printer_name está cargado, la busca por nombre
+//     (exacto y si no parcial) entre las que ve QZ;
+//   - si está vacío, usa la impresora predeterminada de Windows (como antes).
+async function resolvePrinter(qz: Qz, localConfig: LocalConfig | null): Promise<string> {
+  const wanted = localConfig?.printer_name?.trim();
+
+  if (!wanted) {
+    logQz('Sin impresora configurada: consultando la predeterminada...');
+    let printer: string;
+    try {
+      printer = await withTimeout(qz.printers.getDefault(), 10_000, 'Consultar la impresora por defecto');
+    } catch (err) {
+      console.error('QZ getDefault error:', err);
+      logQz(`Error al consultar impresoras: ${err instanceof Error ? err.message : String(err)}`);
+      throw new Error(`No se pudo consultar la impresora por defecto (${err instanceof Error ? err.message : String(err)}).`);
+    }
+    logQz(`Impresora por defecto: "${printer}"`);
+    if (!printer) {
+      logQz('No hay impresora por defecto definida en Windows');
+      throw new Error(
+        'QZ Tray no encontró una impresora predeterminada. Configurá la térmica como ' +
+          '"Establecer como predeterminada" en Windows (Configuración > Dispositivos > Impresoras) ' +
+          'o cargá el nombre de la impresora en Configuración del local.'
+      );
+    }
+    return printer;
+  }
+
+  logQz(`Buscando la impresora configurada: "${wanted}"...`);
+  let printers: string[] = [];
+  try {
+    printers = ((await withTimeout(qz.printers.find(), 10_000, 'Listar impresoras')) ?? []) as unknown as string[];
+  } catch (err) {
+    throw new Error(`No se pudo listar las impresoras (${err instanceof Error ? err.message : String(err)}).`);
+  }
+  logQz(`Impresoras disponibles: ${JSON.stringify(printers)}`);
+
+  const match = pickPrinter(printers, wanted);
+  if (!match) {
+    throw new Error(
+      `No se encontró la impresora "${wanted}". ` +
+        (printers.length ? `Disponibles: ${printers.join(', ')}.` : 'QZ Tray no devolvió impresoras.')
+    );
+  }
+  logQz(`Impresora elegida: "${match}"`);
+  return match;
+}
+
 export async function printEscPosWithQz(sale: SaleWithItems, localConfig: LocalConfig | null): Promise<void> {
   const qz = getQz();
   if (!qz) throw new Error('QZ Tray no está disponible en esta instalación');
@@ -299,24 +369,10 @@ export async function printEscPosWithQz(sale: SaleWithItems, localConfig: LocalC
         'Revisá que esté instalado y abierto (icono en la bandeja del sistema).'
     );
   }
-  logQz('Conectado. Consultando la impresora por defecto...');
+  logQz('Conectado. Resolviendo la impresora...');
 
-  let printer: string;
-  try {
-    printer = await withTimeout(qz.printers.getDefault(), 10_000, 'Consultar la impresora por defecto');
-  } catch (err) {
-    console.error('QZ getDefault error:', err);
-    logQz(`Error al consultar impresoras: ${err instanceof Error ? err.message : String(err)}`);
-    throw new Error(`No se pudo consultar la impresora por defecto (${err instanceof Error ? err.message : String(err)}).`);
-  }
-  logQz(`Impresora por defecto: "${printer}"`);
-  if (!printer) {
-    logQz('No hay impresora por defecto definida en Windows');
-    throw new Error(
-      'QZ Tray no encontró una impresora predeterminada. Configurá la térmica como ' +
-        '"Establecer como predeterminada" en Windows (Configuración > Dispositivos > Impresoras).'
-    );
-  }
+  const printer = await resolvePrinter(qz, localConfig);
+  logQz(`Usando impresora: "${printer}"`);
 
   // Log de las impresoras disponibles para diagnóstico (cuál hay default de verdad).
   try {
