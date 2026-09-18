@@ -12,6 +12,7 @@ interface CategorySectionProps {
   onEditCategory: (category: Category) => void;
   onDeleteCategory: (category: Category) => void;
   onAddDrinkToCategory: (category: Category) => void;
+  onSetStock: (drink: Drink, quantity: number) => void;
 }
 
 export default function CategorySection({
@@ -24,6 +25,7 @@ export default function CategorySection({
   onEditCategory,
   onDeleteCategory,
   onAddDrinkToCategory,
+  onSetStock,
 }: CategorySectionProps) {
   if (drinks.length === 0 && !editMode) return null;
 
@@ -70,6 +72,7 @@ export default function CategorySection({
             onAddToCart={onAddToCart}
             onEdit={onEditDrink}
             onDelete={onDeleteDrink}
+            onSetStock={onSetStock}
           />
         ))}
         {drinks.length === 0 && editMode && (

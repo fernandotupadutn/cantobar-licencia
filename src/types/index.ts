@@ -38,6 +38,7 @@ export interface Drink {
   description: string;
   price: number;
   is_available: boolean;
+  stock: number;
 }
 
 export interface Sale {
@@ -103,7 +104,7 @@ export type CashRegisterCloseFormData = { counted_amount: number; note: string }
 export type CategoryFormData = Pick<Category, 'name' | 'display_order' | 'is_active'>;
 export type DrinkFormData = Pick<
   Drink,
-  'category_id' | 'name' | 'description' | 'price' | 'is_available'
+  'category_id' | 'name' | 'description' | 'price' | 'is_available' | 'stock'
 >;
 export type LocalConfigFormData = Omit<LocalConfig, 'id'>;
 export type ProfileRoleFormData = Pick<Profile, 'role'>;

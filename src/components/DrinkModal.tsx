@@ -19,6 +19,7 @@ export default function DrinkModal({ drink, categories, defaultCategoryId, onClo
           description: drink.description,
           price: drink.price,
           is_available: drink.is_available,
+          stock: drink.stock,
         }
       : {
           category_id: defaultCategoryId ?? categories[0]?.id ?? '',
@@ -26,6 +27,7 @@ export default function DrinkModal({ drink, categories, defaultCategoryId, onClo
           description: '',
           price: 0,
           is_available: true,
+          stock: 0,
         }
   );
   const [saving, setSaving] = useState(false);
@@ -91,6 +93,18 @@ export default function DrinkModal({ drink, categories, defaultCategoryId, onClo
             step={1}
             value={form.price}
             onChange={(e) => setForm({ ...form, price: Number(e.target.value) })}
+            className="w-full border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#E06D00]/40"
+          />
+        </div>
+
+        <div className="mb-3">
+          <label className="block text-xs font-semibold text-zinc-500 mb-1">Stock inicial</label>
+          <input
+            type="number"
+            min={0}
+            step={1}
+            value={form.stock}
+            onChange={(e) => setForm({ ...form, stock: Math.max(0, Number(e.target.value)) })}
             className="w-full border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#E06D00]/40"
           />
         </div>

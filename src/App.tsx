@@ -288,9 +288,11 @@ function AppContent({ profile }: { profile: Profile }) {
   // Carrito
   // ---------------------------------------------------------------
   function addToCart(drink: Drink) {
+    if (drink.stock <= 0) return;
     setCart((prev) => {
       const existing = prev.find((i) => i.drink_id === drink.id);
       if (existing) {
+        if (existing.quantity >= drink.stock) return prev;
         return prev.map((i) => (i.drink_id === drink.id ? { ...i, quantity: i.quantity + 1 } : i));
       }
       return [...prev, { drink_id: drink.id, name: drink.name, unit_price: drink.price, quantity: 1 }];
@@ -298,7 +300,14 @@ function AppContent({ profile }: { profile: Profile }) {
   }
 
   function incrementItem(drinkId: string) {
-    setCart((prev) => prev.map((i) => (i.drink_id === drinkId ? { ...i, quantity: i.quantity + 1 } : i)));
+    const drink = drinks.find((d) => d.id === drinkId);
+    setCart((prev) =>
+      prev.map((i) => {
+        if (i.drink_id !== drinkId) return i;
+        if (drink && i.quantity >= drink.stock) return i;
+        return { ...i, quantity: i.quantity + 1 };
+      })
+    );
   }
 
   function decrementItem(drinkId: string) {
@@ -506,6 +515,29 @@ function AppContent({ profile }: { profile: Profile }) {
     setCart((prev) => prev.filter((i) => i.drink_id !== drink.id));
   }
 
+  // Carga/ajuste de stock desde el modo "Administrar catálogo".
+  async function updateDrinkStock(drink: Drink, quantity: number) {
+    const next = Math.max(0, Math.floor(quantity));
+    if (next === drink.stock) return;
+    const { data, error } = await supabase
+      .from('drinks')
+      .update({ stock: next })
+      .eq('id', drink.id)
+      .select('*')
+      .single();
+    if (error) {
+      console.error(error);
+      alert('No se pudo actualizar el stock.');
+      return;
+    }
+    setDrinks((prev) => prev.map((d) => (d.id === data.id ? (data as Drink) : d)));
+    setCart((prev) =>
+      prev
+        .map((i) => (i.drink_id === drink.id ? { ...i, quantity: Math.min(i.quantity, next) } : i))
+        .filter((i) => i.quantity > 0)
+    );
+  }
+
   // ---------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------
@@ -565,6 +597,7 @@ function AppContent({ profile }: { profile: Profile }) {
                   onAddDrinkToCategory={(cat) =>
                     setDrinkModalState({ open: true, drink: null, defaultCategoryId: cat.id })
                   }
+                  onSetStock={updateDrinkStock}
                 />
               ))}
 

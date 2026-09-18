@@ -104,7 +104,8 @@ create table if not exists drinks (
   name text not null,
   description text not null default '',
   price numeric(10, 2) not null default 0,
-  is_available boolean not null default true
+  is_available boolean not null default true,
+  stock integer not null default 0
 );
 
 create table if not exists cash_registers (
@@ -281,12 +282,13 @@ begin
     end if;
 
     -- Precio, nombre y disponibilidad se resuelven acá, en el servidor.
+    -- Además se exige stock suficiente para la cantidad pedida.
     select price into v_price
     from public.drinks
-    where id = v_drink_id and is_available;
+    where id = v_drink_id and is_available and stock >= v_quantity;
 
     if v_price is null then
-      raise exception 'Bebida no disponible: %', v_drink_id;
+      raise exception 'Bebida no disponible o sin stock suficiente: %', v_drink_id;
     end if;
 
     v_total := v_total + (v_price * v_quantity);
@@ -294,6 +296,11 @@ begin
     insert into public.sale_items (sale_id, drink_id, drink_name, unit_price, quantity, subtotal)
     select v_sale_id, id, name, price, v_quantity, (price * v_quantity)
     from public.drinks
+    where id = v_drink_id;
+
+    -- Descuenta el stock recién vendido. Si algo falla más adelante,
+    -- la transacción completa se revierte (PL/pgSQL es atómico).
+    update public.drinks set stock = stock - v_quantity
     where id = v_drink_id;
   end loop;
 
@@ -638,6 +645,17 @@ begin
       and conrelid = 'public.drinks'::regclass
   ) then
     alter table public.drinks add constraint drinks_price_non_negative check (price >= 0);
+  end if;
+end $$;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'drinks_stock_non_negative'
+      and conrelid = 'public.drinks'::regclass
+  ) then
+    alter table public.drinks add constraint drinks_stock_non_negative check (stock >= 0);
   end if;
 end $$;
 
